@@ -230,10 +230,10 @@ export default function MinimalTradeJournalDashboard() {
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400 mb-1">
-              Latrell's Trade Journal
+              Inderson Investment Group
             </p>
             <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-              Trading Performance
+              Portfolio Performance
             </h1>
             {/* Account badge under title */}
             <div className="mt-2 flex items-center gap-2">
