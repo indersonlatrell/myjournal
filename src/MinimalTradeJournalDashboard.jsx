@@ -1,13 +1,12 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useState, useEffect, useMemo } from "react";
+import { motion } from "framer-motion";
 import {
   LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell
 } from "recharts";
 import {
-  Activity, Target, TrendingUp, Layers,
-  ArrowUpRight, ArrowDownRight, RefreshCw
+  Activity, Target, TrendingUp, Layers, RefreshCw
 } from "lucide-react";
 
 // ─── Config ────────────────────────────────────────────────────────────────
@@ -20,11 +19,16 @@ const RANGES = [
   { label: "YTD", value: "ytd" },
 ];
 
+const ACCOUNTS = [
+  { label: "Funded", value: "funded" },
+  { label: "Other",  value: "other"  },
+];
+
 const INSIGHT_STYLES = {
-  psychology:  { bg: "bg-amber-50",  border: "border-amber-400",  text: "text-amber-800" },
-  execution:   { bg: "bg-blue-50",   border: "border-blue-400",   text: "text-blue-800"  },
-  confidence:  { bg: "bg-emerald-50",border: "border-emerald-400",text: "text-emerald-800"},
-  review:      { bg: "bg-slate-50",  border: "border-slate-300",  text: "text-slate-700" },
+  psychology: { bg: "bg-amber-50",   border: "border-amber-400",   text: "text-amber-800"   },
+  execution:  { bg: "bg-blue-50",    border: "border-blue-400",    text: "text-blue-800"    },
+  confidence: { bg: "bg-emerald-50", border: "border-emerald-400", text: "text-emerald-800" },
+  review:     { bg: "bg-slate-50",   border: "border-slate-300",   text: "text-slate-700"   },
 };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -44,16 +48,10 @@ function buildEquityCurve(trades) {
     });
 }
 
-function fmt(n, d = 2) {
-  return Number(n).toFixed(d);
-}
-
-function signedR(n) {
-  return (n >= 0 ? "+" : "") + fmt(n) + "R";
-}
+function fmt(n, d = 2) { return Number(n).toFixed(d); }
+function signedR(n) { return (n >= 0 ? "+" : "") + fmt(n) + "R"; }
 
 // ─── Sub-components ────────────────────────────────────────────────────────
-
 function MetricCard({ label, value, sub, positive, icon: Icon, loading }) {
   return (
     <div className={`
@@ -66,9 +64,7 @@ function MetricCard({ label, value, sub, positive, icon: Icon, loading }) {
       `} />
       <div className="flex items-start justify-between mb-3">
         <p className="text-xs font-mono uppercase tracking-widest text-slate-400">{label}</p>
-        <div className="rounded-lg bg-slate-100 p-1.5 text-slate-500">
-          <Icon size={14} />
-        </div>
+        <div className="rounded-lg bg-slate-100 p-1.5 text-slate-500"><Icon size={14} /></div>
       </div>
       {loading ? (
         <div className="h-7 w-3/4 bg-slate-100 rounded animate-pulse" />
@@ -100,10 +96,7 @@ function SetupRow({ setup }) {
         <p className="text-sm font-medium text-slate-900">{setup.setup}</p>
         <p className="text-xs text-slate-400 font-mono mt-0.5">{setup.trades} trades</p>
         <div className="mt-1.5 w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
-          <div
-            className="h-full rounded-full bg-emerald-500"
-            style={{ width: `${setup.winRate}%` }}
-          />
+          <div className="h-full rounded-full bg-emerald-500" style={{ width: `${setup.winRate}%` }} />
         </div>
       </div>
       <div className="text-right">
@@ -128,12 +121,8 @@ function TradeRow({ trade }) {
       <td className="py-2.5 px-3 text-xs font-medium">{trade.pair || "—"}</td>
       <td className="py-2.5 px-3 text-xs text-slate-600">{trade.setup || "—"}</td>
       <td className="py-2.5 px-3">
-        <span className={`
-          inline-block text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full
-          ${trade.win
-            ? "bg-emerald-50 text-emerald-700"
-            : "bg-red-50 text-red-600"}
-        `}>
+        <span className={`inline-block text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full
+          ${trade.win ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
           {trade.win ? "WIN" : "LOSS"}
         </span>
       </td>
@@ -146,7 +135,6 @@ function TradeRow({ trade }) {
   );
 }
 
-// ─── Custom Tooltip ────────────────────────────────────────────────────────
 function EquityTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   const val = payload[0].value;
@@ -168,19 +156,48 @@ function SetupTooltip({ active, payload, label }) {
   );
 }
 
+// ─── Account Toggle ────────────────────────────────────────────────────────
+function AccountToggle({ account, onChange }) {
+  return (
+    <div className="flex rounded-xl overflow-hidden border border-slate-200 bg-white">
+      {ACCOUNTS.map((a) => (
+        <button
+          key={a.value}
+          onClick={() => onChange(a.value)}
+          className={`
+            px-4 py-2 text-xs font-mono border-r border-slate-200 last:border-r-0
+            transition-colors duration-150 flex items-center gap-1.5
+            ${account === a.value
+              ? a.value === "funded"
+                ? "bg-amber-500 text-white border-amber-500"
+                : "bg-slate-950 text-white"
+              : "text-slate-500 hover:bg-slate-50"}
+          `}
+        >
+          {a.value === "funded" && (
+            <span className={`w-1.5 h-1.5 rounded-full ${account === "funded" ? "bg-white" : "bg-amber-400"}`} />
+          )}
+          {a.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main Dashboard ────────────────────────────────────────────────────────
 export default function MinimalTradeJournalDashboard() {
   const [range, setRange] = useState("30d");
+  const [account, setAccount] = useState("other");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("setups");
 
-  async function loadData(r) {
+  async function loadData(r, acc) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${WORKER_URL}?range=${r}`);
+      const res = await fetch(`${WORKER_URL}?range=${r}&account=${acc}`);
       const json = await res.json();
       if (!json.success) throw new Error(json.message || "Worker returned success: false");
       setData(json);
@@ -191,14 +208,19 @@ export default function MinimalTradeJournalDashboard() {
     }
   }
 
-  useEffect(() => { loadData(range); }, [range]);
+  useEffect(() => { loadData(range, account); }, [range, account]);
 
   const equityCurve = useMemo(
     () => (data?.trades ? buildEquityCurve(data.trades) : []),
     [data]
   );
 
-  const rangeLabel = { "7d": "last 7 days", "30d": "last 30 days", "90d": "last 90 days", "ytd": "year to date" }[range];
+  const rangeLabel = {
+    "7d": "last 7 days", "30d": "last 30 days",
+    "90d": "last 90 days", "ytd": "year to date"
+  }[range];
+
+  const isFunded = account === "funded";
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-950">
@@ -213,6 +235,16 @@ export default function MinimalTradeJournalDashboard() {
             <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
               Trading Performance
             </h1>
+            {/* Account badge under title */}
+            <div className="mt-2 flex items-center gap-2">
+              <span className={`inline-flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1 rounded-full border
+                ${isFunded
+                  ? "bg-amber-50 border-amber-200 text-amber-700"
+                  : "bg-slate-100 border-slate-200 text-slate-500"}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${isFunded ? "bg-amber-400" : "bg-slate-400"}`} />
+                {isFunded ? "Funded account" : "Other / personal"}
+              </span>
+            </div>
             <p className="mt-1.5 text-xs font-mono text-slate-400">
               {loading
                 ? "Fetching live data from Notion…"
@@ -228,6 +260,9 @@ export default function MinimalTradeJournalDashboard() {
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Live · Notion
             </div>
+
+            {/* Account toggle */}
+            <AccountToggle account={account} onChange={setAccount} />
 
             {/* Range buttons */}
             <div className="flex rounded-xl overflow-hidden border border-slate-200 bg-white">
@@ -250,7 +285,7 @@ export default function MinimalTradeJournalDashboard() {
 
             {/* Refresh */}
             <button
-              onClick={() => loadData(range)}
+              onClick={() => loadData(range, account)}
               className="p-2 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-colors"
               title="Refresh"
             >
@@ -295,7 +330,7 @@ export default function MinimalTradeJournalDashboard() {
           <MetricCard
             label="Best Setup"
             value={data?.bestSetup ? data.bestSetup.setup : "—"}
-            sub={data?.bestSetup ? `${signedR(data.bestSetup.totalR)} total · ${data.bestSetup.winRate}% WR` : "Loading…"}
+            sub={data?.bestSetup ? `${signedR(data.bestSetup.totalR)} · ${data.bestSetup.winRate}% WR` : "Loading…"}
             positive={data?.bestSetup ? data.bestSetup.totalR >= 0 : undefined}
             icon={Layers}
             loading={loading}
@@ -304,8 +339,6 @@ export default function MinimalTradeJournalDashboard() {
 
         {/* ── Equity + Insights ── */}
         <section className="grid gap-4 xl:grid-cols-3">
-
-          {/* Equity curve */}
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
@@ -316,9 +349,7 @@ export default function MinimalTradeJournalDashboard() {
               <h2 className="text-sm font-semibold">Equity Curve</h2>
               {data && (
                 <span className={`text-[10px] font-mono px-2 py-1 rounded-full
-                  ${data.totalR >= 0
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-red-50 text-red-600"}`}>
+                  ${data.totalR >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
                   {signedR(data.totalR)} total
                 </span>
               )}
@@ -336,26 +367,15 @@ export default function MinimalTradeJournalDashboard() {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={equityCurve} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis
-                      dataKey="label"
-                      tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={v => v + "R"}
-                      width={42}
-                    />
+                    <XAxis dataKey="label" tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={v => v + "R"} width={42} />
                     <Tooltip content={<EquityTooltip />} />
                     <Line
                       type="monotone"
                       dataKey="equity"
-                      stroke={data?.totalR >= 0 ? "#16a34a" : "#dc2626"}
+                      stroke={isFunded ? "#f59e0b" : (data?.totalR >= 0 ? "#16a34a" : "#dc2626")}
                       strokeWidth={2.5}
-                      dot={equityCurve.length > 30 ? false : { r: 3, strokeWidth: 0, fill: data?.totalR >= 0 ? "#16a34a" : "#dc2626" }}
+                      dot={equityCurve.length > 30 ? false : { r: 3, strokeWidth: 0, fill: isFunded ? "#f59e0b" : "#16a34a" }}
                       activeDot={{ r: 4, strokeWidth: 0 }}
                     />
                   </LineChart>
@@ -370,18 +390,13 @@ export default function MinimalTradeJournalDashboard() {
             <p className="text-[10px] font-mono text-slate-400 mb-4">
               {data ? `${data.count} trades · ${rangeLabel}` : "Powered by your journal notes"}
             </p>
-
             {loading ? (
               <div className="space-y-3">
-                {[1, 2, 3].map(i => (
-                  <div key={i} className="h-16 bg-slate-50 rounded-xl animate-pulse" />
-                ))}
+                {[1, 2, 3].map(i => <div key={i} className="h-16 bg-slate-50 rounded-xl animate-pulse" />)}
               </div>
             ) : data?.insights?.length ? (
               <div className="space-y-3">
-                {data.insights.map((ins, i) => (
-                  <InsightCard key={i} insight={ins} />
-                ))}
+                {data.insights.map((ins, i) => <InsightCard key={i} insight={ins} />)}
               </div>
             ) : (
               <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
@@ -396,8 +411,6 @@ export default function MinimalTradeJournalDashboard() {
 
         {/* ── Setup stats + Trade log ── */}
         <section className="grid gap-4 xl:grid-cols-2">
-
-          {/* Setup stats + bar chart */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
             <div className="flex gap-0 rounded-lg overflow-hidden border border-slate-200 w-fit mb-4">
               {["setups", "trades"].map(tab => (
@@ -421,9 +434,7 @@ export default function MinimalTradeJournalDashboard() {
                   {[1, 2, 3].map(i => <div key={i} className="h-14 bg-slate-50 rounded-xl animate-pulse" />)}
                 </div>
               ) : data?.setupStats?.length ? (
-                <div>
-                  {data.setupStats.map(s => <SetupRow key={s.setup} setup={s} />)}
-                </div>
+                <div>{data.setupStats.map(s => <SetupRow key={s.setup} setup={s} />)}</div>
               ) : (
                 <p className="text-xs font-mono text-slate-400">No setups for this range.</p>
               )
@@ -435,9 +446,7 @@ export default function MinimalTradeJournalDashboard() {
                   <thead>
                     <tr className="border-b border-slate-100">
                       {["Date", "Pair", "Setup", "Result", "Session", "R"].map(h => (
-                        <th key={h} className="pb-2 px-3 text-[9px] font-mono uppercase tracking-widest text-slate-400 font-normal">
-                          {h}
-                        </th>
+                        <th key={h} className="pb-2 px-3 text-[9px] font-mono uppercase tracking-widest text-slate-400 font-normal">{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -459,7 +468,6 @@ export default function MinimalTradeJournalDashboard() {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
             <h2 className="text-sm font-semibold mb-1">Win Rate by Setup</h2>
             <p className="text-[10px] font-mono text-slate-400 mb-4">Green = 50%+, red = below 50%</p>
-
             {loading ? (
               <div className="h-72 bg-slate-50 rounded-xl animate-pulse" />
             ) : data?.setupStats?.length ? (
@@ -467,27 +475,12 @@ export default function MinimalTradeJournalDashboard() {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={data.setupStats} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis
-                      dataKey="setup"
-                      tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      domain={[0, 100]}
-                      tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={v => v + "%"}
-                      width={36}
-                    />
+                    <XAxis dataKey="setup" tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
+                    <YAxis domain={[0, 100]} tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={v => v + "%"} width={36} />
                     <Tooltip content={<SetupTooltip />} />
                     <Bar dataKey="winRate" radius={[6, 6, 0, 0]}>
                       {data.setupStats.map((s, i) => (
-                        <Cell
-                          key={i}
-                          fill={s.winRate >= 50 ? "rgba(22,163,74,0.75)" : "rgba(220,38,38,0.7)"}
-                        />
+                        <Cell key={i} fill={s.winRate >= 50 ? "rgba(22,163,74,0.75)" : "rgba(220,38,38,0.7)"} />
                       ))}
                     </Bar>
                   </BarChart>
