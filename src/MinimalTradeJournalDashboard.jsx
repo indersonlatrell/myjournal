@@ -112,9 +112,11 @@ function SetupRow({ setup }) {
 
 function TradeRow({ trade }) {
   const r = typeof trade.r === "number" ? trade.r : 0;
+  const pnl = typeof trade.pnl === "number" ? trade.pnl : 0;
   const dateStr = trade.date
     ? new Date(trade.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
     : "—";
+  const pnlStr = (pnl >= 0 ? "+$" : "-$") + Math.abs(pnl).toFixed(2);
   return (
     <tr className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
       <td className="py-2.5 px-3 text-xs font-mono text-slate-500">{dateStr}</td>
@@ -127,9 +129,15 @@ function TradeRow({ trade }) {
         </span>
       </td>
       <td className="py-2.5 px-3 text-xs text-slate-500">{trade.session || "—"}</td>
-      <td className={`py-2.5 px-3 text-xs font-mono font-semibold text-right
-        ${r >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-        {signedR(r)}
+      <td className="py-2.5 px-3 text-right">
+        <p className={`text-xs font-mono font-semibold ${r >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+          {signedR(r)}
+        </p>
+        {pnl !== 0 && (
+          <p className={`text-[10px] font-mono ${pnl >= 0 ? "text-emerald-500" : "text-red-400"}`}>
+            {pnlStr}
+          </p>
+        )}
       </td>
     </tr>
   );
