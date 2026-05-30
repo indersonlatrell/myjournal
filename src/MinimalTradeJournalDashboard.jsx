@@ -6,14 +6,14 @@ import {
   ResponsiveContainer, Cell
 } from "recharts";
 import {
-  Activity, Target, TrendingUp, Layers, RefreshCw
+  Activity, Target, TrendingUp, Layers, RefreshCw,
+  DollarSign, Zap, AlertTriangle
 } from "lucide-react";
 
-// ─── Config ────────────────────────────────────────────────────────────────
 const WORKER_URL = "https://noisy-rain-e6aftest.indersonlatrell7.workers.dev/";
 
 const RANGES = [
-  { label: "7D",  value: "7d" },
+  { label: "7D",  value: "7d"  },
   { label: "30D", value: "30d" },
   { label: "90D", value: "90d" },
   { label: "YTD", value: "ytd" },
@@ -40,9 +40,7 @@ function buildEquityCurve(trades) {
       equity += typeof t.r === "number" ? t.r : 0;
       const d = t.date ? new Date(t.date) : null;
       return {
-        label: d
-          ? d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
-          : `#${i + 1}`,
+        label: d ? d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : `#${i + 1}`,
         equity: Number(equity.toFixed(2)),
       };
     });
@@ -50,30 +48,56 @@ function buildEquityCurve(trades) {
 
 function fmt(n, d = 2) { return Number(n).toFixed(d); }
 function signedR(n) { return (n >= 0 ? "+" : "") + fmt(n) + "R"; }
+function signedUSD(n) { return (n >= 0 ? "+$" : "-$") + Math.abs(n).toFixed(2); }
+
+function calcStreak(trades) {
+  if (!trades || !trades.length) return { current: 0, type: null, longest: 0 };
+  const sorted = [...trades].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+  let current = 1;
+  const last = sorted[sorted.length - 1].win;
+  for (let i = sorted.length - 2; i >= 0; i--) {
+    if (sorted[i].win === last) current++;
+    else break;
+  }
+  let longest = 0, run = 0;
+  for (const t of sorted) {
+    if (t.win) { run++; longest = Math.max(longest, run); }
+    else run = 0;
+  }
+  return { current, type: last ? "win" : "loss", longest };
+}
 
 // ─── Sub-components ────────────────────────────────────────────────────────
-function MetricCard({ label, value, sub, positive, icon: Icon, loading }) {
+function MetricCard({ label, value, sub, positive, icon: Icon, loading, warning }) {
   return (
     <div className={`
       relative overflow-hidden rounded-2xl bg-white border shadow-sm p-5
-      ${positive === true ? "border-emerald-200" : positive === false ? "border-red-200" : "border-slate-200"}
+      ${warning ? "border-red-300" : positive === true ? "border-emerald-200" : positive === false ? "border-red-200" : "border-slate-200"}
     `}>
       <div className={`
         absolute top-0 left-0 right-0 h-0.5
-        ${positive === true ? "bg-emerald-400" : positive === false ? "bg-red-400" : "bg-slate-200"}
+        ${warning ? "bg-red-500" : positive === true ? "bg-emerald-400" : positive === false ? "bg-red-400" : "bg-slate-200"}
       `} />
       <div className="flex items-start justify-between mb-3">
         <p className="text-xs font-mono uppercase tracking-widest text-slate-400">{label}</p>
-        <div className="rounded-lg bg-slate-100 p-1.5 text-slate-500"><Icon size={14} /></div>
+        <div className={`rounded-lg p-1.5 ${warning ? "bg-red-50 text-red-500" : "bg-slate-100 text-slate-500"}`}>
+          <Icon size={14} />
+        </div>
       </div>
       {loading ? (
         <div className="h-7 w-3/4 bg-slate-100 rounded animate-pulse" />
       ) : (
         <p className={`text-2xl font-bold tracking-tight font-mono
-          ${positive === true ? "text-emerald-600" : positive === false ? "text-red-500" : "text-slate-900"}
+          ${warning ? "text-red-500" : positive === true ? "text-emerald-600" : positive === false ? "text-red-500" : "text-slate-900"}
         `}>{value}</p>
       )}
       <p className="mt-2 text-xs text-slate-400 font-mono">{sub}</p>
+      {warning && (
+        <div className="mt-2 flex items-center gap-1 text-[10px] font-mono text-red-500">
+          <AlertTriangle size={10} />
+          {warning}
+        </div>
+      )}
     </div>
   );
 }
@@ -116,7 +140,6 @@ function TradeRow({ trade }) {
   const dateStr = trade.date
     ? new Date(trade.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
     : "—";
-  const pnlStr = (pnl >= 0 ? "+$" : "-$") + Math.abs(pnl).toFixed(2);
   return (
     <tr className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
       <td className="py-2.5 px-3 text-xs font-mono text-slate-500">{dateStr}</td>
@@ -135,7 +158,7 @@ function TradeRow({ trade }) {
         </p>
         {pnl !== 0 && (
           <p className={`text-[10px] font-mono ${pnl >= 0 ? "text-emerald-500" : "text-red-400"}`}>
-            {pnlStr}
+            {signedUSD(pnl)}
           </p>
         )}
       </td>
@@ -164,7 +187,6 @@ function SetupTooltip({ active, payload, label }) {
   );
 }
 
-// ─── Account Toggle ────────────────────────────────────────────────────────
 function AccountToggle({ account, onChange }) {
   return (
     <div className="flex rounded-xl overflow-hidden border border-slate-200 bg-white">
@@ -223,12 +245,22 @@ export default function MinimalTradeJournalDashboard() {
     [data]
   );
 
+  const streak = useMemo(() => calcStreak(data?.trades || []), [data]);
+
+  const netPnl = useMemo(() => {
+    if (!data?.trades) return 0;
+    return data.trades.reduce((sum, t) => sum + (typeof t.pnl === "number" ? t.pnl : 0), 0);
+  }, [data]);
+
   const rangeLabel = {
     "7d": "last 7 days", "30d": "last 30 days",
     "90d": "last 90 days", "ytd": "year to date"
   }[range];
 
   const isFunded = account === "funded";
+  const lossStreakWarning = streak.type === "loss" && streak.current >= 2
+    ? `${streak.current} losses in a row — consider stepping back`
+    : null;
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-950">
@@ -238,12 +270,11 @@ export default function MinimalTradeJournalDashboard() {
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400 mb-1">
-              Inderson Investment Group
+              Latrell's Trade Journal
             </p>
             <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-              Portfolio Performance
+              Trading Performance
             </h1>
-            {/* Account badge under title */}
             <div className="mt-2 flex items-center gap-2">
               <span className={`inline-flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1 rounded-full border
                 ${isFunded
@@ -263,16 +294,11 @@ export default function MinimalTradeJournalDashboard() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Live indicator */}
             <div className="flex items-center gap-1.5 text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Live · Notion
             </div>
-
-            {/* Account toggle */}
             <AccountToggle account={account} onChange={setAccount} />
-
-            {/* Range buttons */}
             <div className="flex rounded-xl overflow-hidden border border-slate-200 bg-white">
               {RANGES.map((r) => (
                 <button
@@ -281,17 +307,13 @@ export default function MinimalTradeJournalDashboard() {
                   className={`
                     px-4 py-2 text-xs font-mono border-r border-slate-200 last:border-r-0
                     transition-colors duration-150
-                    ${range === r.value
-                      ? "bg-slate-950 text-white"
-                      : "text-slate-500 hover:bg-slate-50"}
+                    ${range === r.value ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-50"}
                   `}
                 >
                   {r.label}
                 </button>
               ))}
             </div>
-
-            {/* Refresh */}
             <button
               onClick={() => loadData(range, account)}
               className="p-2 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-colors"
@@ -309,7 +331,7 @@ export default function MinimalTradeJournalDashboard() {
           </div>
         )}
 
-        {/* ── Metric Cards ── */}
+        {/* ── Metric Cards — row 1 ── */}
         <section className="grid grid-cols-2 xl:grid-cols-4 gap-3">
           <MetricCard
             label="Net R"
@@ -328,11 +350,11 @@ export default function MinimalTradeJournalDashboard() {
             loading={loading}
           />
           <MetricCard
-            label="Avg R Multiple"
-            value={data ? signedR(data.avgR) : "—"}
-            sub="Per completed trade"
-            positive={data ? data.avgR >= 0 : undefined}
-            icon={TrendingUp}
+            label="Net P&L"
+            value={data ? signedUSD(netPnl) : "—"}
+            sub={data ? `${data.count} trades · ${rangeLabel}` : "Loading…"}
+            positive={data ? netPnl >= 0 : undefined}
+            icon={DollarSign}
             loading={loading}
           />
           <MetricCard
@@ -341,6 +363,39 @@ export default function MinimalTradeJournalDashboard() {
             sub={data?.bestSetup ? `${signedR(data.bestSetup.totalR)} · ${data.bestSetup.winRate}% WR` : "Loading…"}
             positive={data?.bestSetup ? data.bestSetup.totalR >= 0 : undefined}
             icon={Layers}
+            loading={loading}
+          />
+        </section>
+
+        {/* ── Metric Cards — row 2: streak ── */}
+        <section className="grid grid-cols-2 xl:grid-cols-3 gap-3">
+          <MetricCard
+            label="Current Streak"
+            value={
+              !data ? "—" :
+              streak.type === "win"  ? `W${streak.current}` :
+              streak.type === "loss" ? `L${streak.current}` : "—"
+            }
+            sub={streak.type === "win" ? "Keep following your rules" : streak.type === "loss" ? "Review last trades before continuing" : "No trades yet"}
+            positive={streak.type === "win" ? true : streak.type === "loss" ? false : undefined}
+            icon={streak.type === "loss" && streak.current >= 2 ? AlertTriangle : Zap}
+            loading={loading}
+            warning={lossStreakWarning}
+          />
+          <MetricCard
+            label="Longest Win Streak"
+            value={data ? `W${streak.longest}` : "—"}
+            sub="Best consecutive wins in range"
+            positive={streak.longest > 0 ? true : undefined}
+            icon={TrendingUp}
+            loading={loading}
+          />
+          <MetricCard
+            label="Avg R Multiple"
+            value={data ? signedR(data.avgR) : "—"}
+            sub="Per completed trade"
+            positive={data ? data.avgR >= 0 : undefined}
+            icon={TrendingUp}
             loading={loading}
           />
         </section>
@@ -363,7 +418,6 @@ export default function MinimalTradeJournalDashboard() {
               )}
             </div>
             <p className="text-[10px] font-mono text-slate-400 mb-4">Cumulative R — tracks growth and drawdown</p>
-
             {loading ? (
               <div className="h-72 bg-slate-50 rounded-xl animate-pulse" />
             ) : equityCurve.length === 0 ? (
@@ -453,7 +507,7 @@ export default function MinimalTradeJournalDashboard() {
                 <table className="w-full text-left">
                   <thead>
                     <tr className="border-b border-slate-100">
-                      {["Date", "Pair", "Setup", "Result", "Session", "R"].map(h => (
+                      {["Date", "Pair", "Setup", "Result", "Session", "R / $"].map(h => (
                         <th key={h} className="pb-2 px-3 text-[9px] font-mono uppercase tracking-widest text-slate-400 font-normal">{h}</th>
                       ))}
                     </tr>
