@@ -103,38 +103,10 @@ function buildWeeklyGrid(trades) {
 
 // ─── Macro AI fetch ────────────────────────────────────────────────────────
 async function fetchMacroIntel() {
-  const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  const prompt = `Today is ${today}. You are a macro analyst helping a funded forex/futures trader decide whether to trade today.
-
-Return ONLY a JSON object with this exact structure, no markdown, no preamble:
-{
-  "sentiment": "risk-on" | "risk-off" | "neutral",
-  "sentimentReason": "one sentence explanation",
-  "events": [
-    { "time": "HH:MM ET", "name": "Event name", "impact": "high" | "medium", "currency": "USD/EUR/etc", "note": "brief trading implication" }
-  ],
-  "todayWarning": null | "warning message if there is a major event TODAY that warrants caution",
-  "traderTip": "one actionable sentence for the trader based on current macro environment"
-}
-
-Include only events from today and the next 3 days. Focus on: NFP, CPI, FOMC, PCE, GDP, PMI, retail sales, central bank decisions. If no major events, return empty array. Be accurate to current real-world conditions.`;
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
-      tools: [{ type: "web_search_20250305", name: "web_search" }],
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
-
+  const res = await fetch(WORKER_URL + "macro");
   const data = await res.json();
-  const textBlock = data.content?.find(b => b.type === "text");
-  if (!textBlock) throw new Error("No text response");
-  const clean = textBlock.text.replace(/```json|```/g, "").trim();
-  return JSON.parse(clean);
+  if (!data.success) throw new Error(data.message || "Macro fetch failed");
+  return data;
 }
 
 // ─── Macro Panel ───────────────────────────────────────────────────────────
@@ -174,42 +146,50 @@ function MacroPanel({ macro, macroLoading, macroError, onRefresh }) {
         </div>
       ) : macro ? (
         <div className="space-y-3">
-          {/* Sentiment */}
+          {/* Sentiment + Fear & Greed */}
           <div className={`rounded-xl border px-4 py-3 ${sc.bg} ${sc.border}`}>
-            <div className="flex items-center gap-2 mb-1">
-              <span className={`w-2 h-2 rounded-full ${sc.dot}`} />
-              <p className={`text-xs font-semibold capitalize ${sc.text}`}>{macro.sentiment}</p>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${sc.dot}`} />
+                <p className={`text-xs font-semibold capitalize ${sc.text}`}>{macro.sentiment}</p>
+              </div>
+              {macro.fearGreed && (
+                <span className="text-[10px] font-mono text-slate-500">
+                  F&G: {macro.fearGreed.score} · {macro.fearGreed.rating}
+                </span>
+              )}
             </div>
-            <p className="text-[10px] font-mono text-slate-500 leading-relaxed">{macro.sentimentReason}</p>
+            <p className="text-[10px] font-mono text-slate-500 leading-relaxed">
+              {macro.fearGreed
+                ? `CNN Fear & Greed index at ${macro.fearGreed.score}/100 (${macro.fearGreed.rating}).`
+                : "Based on current market conditions."}
+            </p>
           </div>
 
           {/* Upcoming events */}
-          {macro.events?.length > 0 && (
+          {macro.events?.length > 0 ? (
             <div className="space-y-2">
-              <p className="text-[9px] font-mono uppercase tracking-widest text-slate-400">Upcoming events</p>
+              <p className="text-[9px] font-mono uppercase tracking-widest text-slate-400">High-impact events</p>
               {macro.events.map((ev, i) => (
-                <div key={i} className="flex items-start justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
+                <div key={i} className={`flex items-start justify-between gap-2 rounded-lg px-3 py-2 ${ev.isToday ? "bg-red-50 border border-red-100" : "bg-slate-50"}`}>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 mb-0.5">
-                      <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-semibold ${impactColors[ev.impact] || impactColors.medium}`}>
-                        {ev.impact?.toUpperCase()}
-                      </span>
+                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded font-semibold bg-red-100 text-red-700">HIGH</span>
                       <span className="text-[9px] font-mono text-slate-400">{ev.currency}</span>
+                      {ev.isToday && <span className="text-[9px] font-mono text-red-600 font-semibold">TODAY</span>}
                     </div>
                     <p className="text-[11px] font-medium text-slate-800 truncate">{ev.name}</p>
-                    <p className="text-[10px] font-mono text-slate-400 leading-relaxed">{ev.note}</p>
                   </div>
-                  <p className="text-[10px] font-mono text-slate-400 whitespace-nowrap">{ev.time}</p>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-[10px] font-mono text-slate-400">{ev.date}</p>
+                    <p className="text-[10px] font-mono text-slate-400">{ev.time}</p>
+                  </div>
                 </div>
               ))}
             </div>
-          )}
-
-          {/* Trader tip */}
-          {macro.traderTip && (
-            <div className="rounded-xl bg-blue-50 border border-blue-100 px-4 py-3">
-              <p className="text-[9px] font-mono uppercase tracking-widest text-blue-400 mb-1">Trader tip</p>
-              <p className="text-[11px] font-mono text-blue-800 leading-relaxed">{macro.traderTip}</p>
+          ) : (
+            <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+              <p className="text-[11px] font-mono text-emerald-700">No high-impact events in the next 4 days. Clean macro backdrop.</p>
             </div>
           )}
         </div>
