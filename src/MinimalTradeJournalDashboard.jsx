@@ -13,6 +13,8 @@ import {
 
 const WORKER_URL = "https://noisy-rain-e6aftest.indersonlatrell7.workers.dev/";
 const PAYOUT_KEY = "myjournal_payout_target";
+const RULES_KEY   = "myjournal_rules";
+const GOALS_KEY   = "myjournal_goals";
 
 const RANGES = [
   { label: "7D",  value: "7d"  },
@@ -869,6 +871,380 @@ function MonthlyPnlChart({ trades, loading }) {
   );
 }
 
+
+// ─── Trading Rules Panel ────────────────────────────────────────────────────
+function RulesPanel({ trades }) {
+  const [rules, setRules] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(RULES_KEY) || "[]"); }
+    catch { return []; }
+  });
+  const [input, setInput] = useState("");
+  const [editIdx, setEditIdx] = useState(null);
+  const [editVal, setEditVal] = useState("");
+
+  function saveRules(updated) {
+    setRules(updated);
+    localStorage.setItem(RULES_KEY, JSON.stringify(updated));
+  }
+
+  function addRule() {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    saveRules([...rules, { text: trimmed, violations: 0 }]);
+    setInput("");
+  }
+
+  function deleteRule(i) {
+    saveRules(rules.filter((_, idx) => idx !== i));
+  }
+
+  function markViolation(i) {
+    const updated = rules.map((r, idx) => idx === i ? { ...r, violations: r.violations + 1 } : r);
+    saveRules(updated);
+  }
+
+  function resetViolation(i) {
+    const updated = rules.map((r, idx) => idx === i ? { ...r, violations: 0 } : r);
+    saveRules(updated);
+  }
+
+  function startEdit(i) {
+    setEditIdx(i);
+    setEditVal(rules[i].text);
+  }
+
+  function saveEdit(i) {
+    const updated = rules.map((r, idx) => idx === i ? { ...r, text: editVal.trim() } : r);
+    saveRules(updated);
+    setEditIdx(null);
+  }
+
+  const totalViolations = rules.reduce((s, r) => s + r.violations, 0);
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-sm font-semibold">My Trading Rules</h2>
+        {totalViolations > 0 && (
+          <span className="text-[10px] font-mono bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-full">
+            {totalViolations} violation{totalViolations !== 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+      <p className="text-[10px] font-mono text-slate-400 mb-4">Your rules · tap + to add · track violations manually</p>
+
+      {/* Add rule */}
+      <div className="flex gap-2 mb-4">
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && addRule()}
+          placeholder="e.g. Never trade the first 15 minutes"
+          className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-slate-400"
+        />
+        <button onClick={addRule}
+          className="bg-slate-950 text-white rounded-lg px-3 py-2 text-xs font-mono hover:bg-slate-800 transition-colors">
+          + Add
+        </button>
+      </div>
+
+      {rules.length === 0 ? (
+        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+          <p className="text-xs font-mono text-slate-400">No rules yet. Add your first rule above.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {rules.map((rule, i) => (
+            <div key={i} className={`rounded-xl border px-3 py-2.5 ${rule.violations > 0 ? "bg-red-50 border-red-200" : "bg-slate-50 border-slate-200"}`}>
+              {editIdx === i ? (
+                <div className="flex gap-2">
+                  <input autoFocus value={editVal} onChange={e => setEditVal(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && saveEdit(i)}
+                    className="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono focus:outline-none" />
+                  <button onClick={() => saveEdit(i)} className="text-emerald-600 text-xs font-mono hover:underline">Save</button>
+                  <button onClick={() => setEditIdx(null)} className="text-slate-400 text-xs font-mono hover:underline">Cancel</button>
+                </div>
+              ) : (
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2 flex-1 min-w-0">
+                    <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${rule.violations > 0 ? "bg-red-500" : "bg-emerald-500"}`} />
+                    <p className="text-xs text-slate-700 leading-relaxed">{rule.text}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {rule.violations > 0 && (
+                      <span className="text-[10px] font-mono text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">{rule.violations}x</span>
+                    )}
+                    <button onClick={() => markViolation(i)} title="Mark violation"
+                      className="text-[10px] font-mono text-red-400 hover:text-red-600 transition-colors px-1">+1</button>
+                    {rule.violations > 0 && (
+                      <button onClick={() => resetViolation(i)} title="Reset"
+                        className="text-[10px] font-mono text-slate-400 hover:text-slate-600 transition-colors">↺</button>
+                    )}
+                    <button onClick={() => startEdit(i)}
+                      className="text-[10px] font-mono text-slate-400 hover:text-slate-600 transition-colors">✎</button>
+                    <button onClick={() => deleteRule(i)}
+                      className="text-[10px] font-mono text-slate-300 hover:text-red-500 transition-colors">✕</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Goal Tracker ───────────────────────────────────────────────────────────
+function GoalTracker({ data, loading }) {
+  const [goals, setGoals] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(GOALS_KEY) || "{}"); }
+    catch { return {}; }
+  });
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ monthlyR: "", maxBadTrades: "" });
+
+  function saveGoals() {
+    const updated = {
+      monthlyR: parseFloat(form.monthlyR) || 0,
+      maxBadTrades: parseInt(form.maxBadTrades) || 0,
+    };
+    setGoals(updated);
+    localStorage.setItem(GOALS_KEY, JSON.stringify(updated));
+    setEditing(false);
+  }
+
+  function startEdit() {
+    setForm({ monthlyR: goals.monthlyR || "", maxBadTrades: goals.maxBadTrades || "" });
+    setEditing(true);
+  }
+
+  // Calculate current month stats from data
+  const now = new Date();
+  const currentMonthTrades = (data?.trades || []).filter(t => {
+    if (!t.date) return false;
+    const d = new Date(t.date);
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  });
+
+  const currentR = currentMonthTrades.reduce((s, t) => s + (typeof t.r === "number" ? t.r : 0), 0);
+  const badTrades = currentMonthTrades.filter(t => t.tradeQuality === "BAD TRADE").length;
+
+  const rProgress = goals.monthlyR > 0 ? Math.min(100, Math.max(0, (currentR / goals.monthlyR) * 100)) : 0;
+  const badProgress = goals.maxBadTrades > 0 ? Math.min(100, (badTrades / goals.maxBadTrades) * 100) : 0;
+  const badWarning = goals.maxBadTrades > 0 && badTrades >= goals.maxBadTrades;
+
+  const monthLabel = now.toLocaleDateString("en-GB", { month: "long" });
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-sm font-semibold">Goal Tracker</h2>
+        <button onClick={startEdit}
+          className="flex items-center gap-1 text-[10px] font-mono text-slate-400 hover:text-slate-700 transition-colors">
+          <Edit2 size={10} />
+          {Object.keys(goals).length ? "Edit goals" : "Set goals"}
+        </button>
+      </div>
+      <p className="text-[10px] font-mono text-slate-400 mb-4">{monthLabel} targets</p>
+
+      {editing ? (
+        <div className="space-y-3 mb-4">
+          <div>
+            <label className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block mb-1">Monthly R target</label>
+            <input type="number" value={form.monthlyR} onChange={e => setForm(f => ({ ...f, monthlyR: e.target.value }))}
+              placeholder="e.g. 20" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-slate-400" />
+          </div>
+          <div>
+            <label className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block mb-1">Max bad trades per month</label>
+            <input type="number" value={form.maxBadTrades} onChange={e => setForm(f => ({ ...f, maxBadTrades: e.target.value }))}
+              placeholder="e.g. 2" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-slate-400" />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={saveGoals} className="flex-1 bg-slate-950 text-white rounded-lg py-2 text-xs font-mono hover:bg-slate-800 transition-colors">Save goals</button>
+            <button onClick={() => setEditing(false)} className="px-4 border border-slate-200 rounded-lg text-xs font-mono text-slate-500 hover:bg-slate-50 transition-colors">Cancel</button>
+          </div>
+        </div>
+      ) : !goals.monthlyR && !goals.maxBadTrades ? (
+        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+          <p className="text-xs font-mono text-slate-400">Click "Set goals" to define your monthly targets.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Monthly R goal */}
+          {goals.monthlyR > 0 && (
+            <div>
+              <div className="flex items-end justify-between mb-1.5">
+                <div>
+                  <p className="text-[9px] font-mono uppercase tracking-wider text-slate-400">Monthly R</p>
+                  {loading ? <div className="h-5 w-16 bg-slate-100 rounded animate-pulse mt-1" /> : (
+                    <p className={`text-lg font-bold font-mono ${currentR >= goals.monthlyR ? "text-emerald-600" : currentR >= 0 ? "text-slate-900" : "text-red-500"}`}>
+                      {signedR(currentR)}
+                    </p>
+                  )}
+                </div>
+                <p className="text-xs font-mono text-slate-400">of {goals.monthlyR}R</p>
+              </div>
+              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full transition-all duration-500 ${currentR >= goals.monthlyR ? "bg-emerald-500" : "bg-blue-400"}`}
+                  style={{ width: `${rProgress}%` }} />
+              </div>
+              <div className="flex justify-between mt-1 text-[10px] font-mono text-slate-400">
+                <span>{fmt(rProgress, 1)}% complete</span>
+                {currentR < goals.monthlyR && <span>{fmt(goals.monthlyR - currentR, 2)}R remaining</span>}
+                {currentR >= goals.monthlyR && <span className="text-emerald-600">Target reached!</span>}
+              </div>
+            </div>
+          )}
+
+          {/* Consistency goal */}
+          {goals.maxBadTrades > 0 && (
+            <div>
+              <div className="flex items-end justify-between mb-1.5">
+                <div>
+                  <p className="text-[9px] font-mono uppercase tracking-wider text-slate-400">Bad trades this month</p>
+                  <p className={`text-lg font-bold font-mono ${badWarning ? "text-red-500" : "text-slate-900"}`}>
+                    {badTrades} / {goals.maxBadTrades}
+                  </p>
+                </div>
+                {badWarning && (
+                  <span className="text-[10px] font-mono text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <AlertTriangle size={9} /> Limit reached
+                  </span>
+                )}
+              </div>
+              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full transition-all duration-500 ${badWarning ? "bg-red-500" : badProgress > 60 ? "bg-amber-400" : "bg-emerald-400"}`}
+                  style={{ width: `${badProgress}%` }} />
+              </div>
+              <p className="mt-1 text-[10px] font-mono text-slate-400">
+                {badWarning ? "Stop taking bad trades this month." : `${goals.maxBadTrades - badTrades} bad trade${goals.maxBadTrades - badTrades !== 1 ? "s" : ""} remaining`}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Journal AI Chat ────────────────────────────────────────────────────────
+function JournalAI({ data }) {
+  const [messages, setMessages] = useState([
+    { role: "assistant", text: "Ask me anything about your trades. Powered by Groq AI. Try: \"What\'s my best setup?\" or \"When do I perform best?\"" }
+  ]);
+  const [input, setInput] = useState("");
+  const [thinking, setThinking] = useState(false);
+  const bottomRef = React.useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, thinking]);
+
+  async function ask() {
+    const q = input.trim();
+    if (!q || thinking) return;
+    setInput("");
+    setMessages(m => [...m, { role: "user", text: q }]);
+    setThinking(true);
+
+    try {
+      const res = await fetch(WORKER_URL + "chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: q,
+          trades: data?.trades || [],
+          stats: {
+            count: data?.count, winRate: data?.winRate,
+            totalR: data?.totalR, netProfit: data?.netProfit,
+          },
+        }),
+      });
+
+      const json = await res.json();
+      if (!json.success) throw new Error(json.message || "Worker error");
+      const reply = json.reply || "Sorry, I couldn't analyse that.";
+      setMessages(m => [...m, { role: "assistant", text: reply }]);
+    } catch (err) {
+      const msg = err?.message?.includes("401") || err?.message?.includes("403")
+        ? "API key required — the Journal AI needs a paid Anthropic API key to work."
+        : "Connection error — try again.";
+      setMessages(m => [...m, { role: "assistant", text: msg }]);
+    } finally {
+      setThinking(false);
+    }
+  }
+
+  const suggestions = [
+    "What's my best setup?",
+    "When do I perform best?",
+    "What mistakes do I repeat?",
+    "Which confluences work best?",
+  ];
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col" style={{ minHeight: "420px" }}>
+      <h2 className="text-sm font-semibold mb-1">Journal AI</h2>
+      <p className="text-[10px] font-mono text-slate-400 mb-4">Ask questions about your own trade data</p>
+
+      {/* Suggestions */}
+      {messages.length === 1 && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {suggestions.map((s, i) => (
+            <button key={i} onClick={() => { setInput(s); }}
+              className="text-[10px] font-mono bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5 text-slate-600 hover:bg-slate-100 transition-colors">
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-1" style={{ maxHeight: "260px" }}>
+        {messages.map((m, i) => (
+          <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`rounded-2xl px-4 py-2.5 text-xs leading-relaxed max-w-[85%]
+              ${m.role === "user"
+                ? "bg-slate-950 text-white font-mono"
+                : "bg-slate-50 border border-slate-200 text-slate-700"}`}>
+              {m.text}
+            </div>
+          </div>
+        ))}
+        {thinking && (
+          <div className="flex justify-start">
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5">
+              <div className="flex gap-1 items-center">
+                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+              </div>
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      <div className="flex gap-2">
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && ask()}
+          placeholder="Ask about your trades…"
+          className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:border-slate-400"
+        />
+        <button onClick={ask} disabled={thinking || !input.trim()}
+          className="bg-slate-950 text-white rounded-xl px-4 py-2 text-xs font-mono hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+          Ask
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
 function AccountToggle({ account, onChange }) {
   return (
     <div className="flex rounded-xl overflow-hidden border border-slate-200 bg-white">
@@ -1107,6 +1483,13 @@ export default function MinimalTradeJournalDashboard() {
           <DayAnalysisPanel trades={data?.trades} loading={loading} />
           <ConfluencePanel trades={data?.trades} loading={loading} />
           <MistakesPanel trades={data?.trades} loading={loading} />
+        </section>
+
+        {/* Rules + Goals + Journal AI */}
+        <section className="grid gap-4 xl:grid-cols-3">
+          <RulesPanel trades={data?.trades} />
+          <GoalTracker data={data} loading={loading} />
+          <JournalAI data={data} />
         </section>
 
         {/* Setup stats + trade log */}
