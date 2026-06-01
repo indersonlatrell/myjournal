@@ -104,9 +104,9 @@ function buildWeeklyGrid(trades) {
 // ─── Trade Quality ─────────────────────────────────────────────────────────
 function buildQualityStats(trades) {
   if (!trades || !trades.length) return null;
-  const good = trades.filter(t => t.tradeQuality === "GOOD");
-  const bad  = trades.filter(t => t.tradeQuality === "BAD");
-  const untagged = trades.filter(t => !t.tradeQuality);
+  const good = trades.filter(t => t.tradeQuality === "GOOD TRADE");
+  const bad  = trades.filter(t => t.tradeQuality === "BAD TRADE");
+  const untagged = trades.filter(t => !t.tradeQuality || (t.tradeQuality !== "GOOD TRADE" && t.tradeQuality !== "BAD TRADE"));
 
   function stats(arr) {
     if (!arr.length) return { count: 0, winRate: 0, avgR: 0, totalPnl: 0 };
@@ -151,6 +151,58 @@ function buildMonthlyPnl(trades) {
       pnl: Number(m.pnl.toFixed(2)),
       r:   Number(m.r.toFixed(2)),
       winRate: m.trades ? Math.round((m.wins / m.trades) * 100) : 0,
+    }));
+}
+
+// ─── Day Analysis ──────────────────────────────────────────────────────────
+function buildDayStats(trades) {
+  if (!trades || !trades.length) return null;
+  const buckets = { Green: [], Red: [] };
+  for (const t of trades) {
+    const d = t.day;
+    if (d === "Green" || d === "Red") buckets[d].push(t);
+  }
+  function stats(arr) {
+    if (!arr.length) return { count: 0, winRate: 0, avgR: 0, pnl: 0 };
+    const wins = arr.filter(t => t.win).length;
+    const totalR = arr.reduce((s, t) => s + (typeof t.r === "number" ? t.r : 0), 0);
+    const pnl = arr.reduce((s, t) => s + (typeof t.pnl === "number" ? t.pnl : 0), 0);
+    return { count: arr.length, winRate: Math.round((wins / arr.length) * 100), avgR: Number((totalR / arr.length).toFixed(2)), pnl: Number(pnl.toFixed(2)) };
+  }
+  return { green: stats(buckets.Green), red: stats(buckets.Red) };
+}
+
+// ─── Confluence Analysis ────────────────────────────────────────────────────
+function buildConfluenceStats(trades) {
+  if (!trades || !trades.length) return [];
+  const map = {};
+  for (const t of trades) {
+    for (const c of (t.confluences || [])) {
+      if (!map[c]) map[c] = { name: c, count: 0, wins: 0, totalR: 0 };
+      map[c].count++;
+      if (t.win) map[c].wins++;
+      map[c].totalR += typeof t.r === "number" ? t.r : 0;
+    }
+  }
+  return Object.values(map)
+    .map(c => ({ ...c, winRate: Math.round((c.wins / c.count) * 100), avgR: Number((c.totalR / c.count).toFixed(2)), totalR: Number(c.totalR.toFixed(2)) }))
+    .sort((a, b) => b.winRate - a.winRate || b.count - a.count)
+    .slice(0, 10);
+}
+
+// ─── Mistakes Analysis ──────────────────────────────────────────────────────
+function buildMistakes(trades) {
+  if (!trades || !trades.length) return [];
+  return trades
+    .filter(t => t.mistakes && t.mistakes.trim().length > 0)
+    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+    .slice(0, 12)
+    .map(t => ({
+      date: t.date ? new Date(t.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "—",
+      mistake: t.mistakes.trim(),
+      win: t.win,
+      pair: t.pair || "—",
+      r: typeof t.r === "number" ? t.r : 0,
     }));
 }
 
@@ -526,6 +578,154 @@ function SetupTooltip({ active, payload, label }) {
   );
 }
 
+// ─── Day Analysis Panel ────────────────────────────────────────────────────
+function DayAnalysisPanel({ trades, loading }) {
+  const stats = buildDayStats(trades || []);
+  const days = [
+    { key: "green", label: "Green Day", bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", dot: "bg-emerald-500" },
+    { key: "red",   label: "Red Day",   bg: "bg-red-50",     border: "border-red-200",     text: "text-red-600",   dot: "bg-red-500"     },
+  ];
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <h2 className="text-sm font-semibold mb-1">Day Analysis</h2>
+      <p className="text-[10px] font-mono text-slate-400 mb-4">Green vs Red day performance</p>
+      {loading ? (
+        <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-20 bg-slate-50 rounded-xl animate-pulse" />)}</div>
+      ) : !stats || (stats.green.count + stats.red.count === 0) ? (
+        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+          <p className="text-xs font-mono text-slate-400">Tag your trades as Green or Red day in Notion to unlock this panel.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {days.map(({ key, label, bg, border, text, dot }) => {
+            const s = stats[key];
+            if (s.count === 0) return null;
+            return (
+              <div key={key} className={`rounded-xl border px-4 py-3 ${bg} ${border}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className={`w-2 h-2 rounded-full ${dot}`} />
+                  <span className={`text-xs font-semibold ${text}`}>{label}</span>
+                  <span className={`ml-auto text-[10px] font-mono px-2 py-0.5 rounded-full bg-white ${text}`}>{s.count} trades</span>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <p className="text-[9px] font-mono text-slate-400 uppercase tracking-wider mb-0.5">Win Rate</p>
+                    <p className={`text-sm font-mono font-bold ${text}`}>{s.winRate}%</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-mono text-slate-400 uppercase tracking-wider mb-0.5">Avg R</p>
+                    <p className={`text-sm font-mono font-bold ${text}`}>{signedR(s.avgR)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-mono text-slate-400 uppercase tracking-wider mb-0.5">P&L</p>
+                    <p className={`text-sm font-mono font-bold ${text}`}>{signedUSD(s.pnl)}</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {/* Insight */}
+          {stats.green.count > 0 && stats.red.count > 0 && (
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+              <p className="text-[10px] font-mono text-slate-500 leading-relaxed">
+                {stats.green.winRate > stats.red.winRate
+                  ? `You win ${stats.green.winRate - stats.red.winRate}% more on Green days. Prioritise Green days for higher size.`
+                  : stats.red.winRate > stats.green.winRate
+                  ? `Interestingly your Red day win rate is higher. Review what changes on Green days.`
+                  : `Similar performance on both day types.`}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Confluence Panel ───────────────────────────────────────────────────────
+function ConfluencePanel({ trades, loading }) {
+  const confluences = buildConfluenceStats(trades || []);
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <h2 className="text-sm font-semibold mb-1">Confluence Breakdown</h2>
+      <p className="text-[10px] font-mono text-slate-400 mb-4">Which confluences correlate with wins</p>
+      {loading ? (
+        <div className="space-y-2">{[1,2,3,4].map(i => <div key={i} className="h-10 bg-slate-50 rounded-lg animate-pulse" />)}</div>
+      ) : confluences.length === 0 ? (
+        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+          <p className="text-xs font-mono text-slate-400">Add confluences to your trades in Notion to unlock this breakdown.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {confluences.map((c, i) => (
+            <div key={i} className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-medium text-slate-800 truncate">{c.name}</p>
+                  <span className="text-[10px] font-mono text-slate-400 ml-2 flex-shrink-0">{c.count}x</span>
+                </div>
+                {/* Win rate bar */}
+                <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${c.winRate >= 60 ? "bg-emerald-500" : c.winRate >= 40 ? "bg-amber-400" : "bg-red-400"}`}
+                    style={{ width: `${c.winRate}%` }}
+                  />
+                </div>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <p className={`text-xs font-mono font-semibold ${c.winRate >= 50 ? "text-emerald-600" : "text-red-500"}`}>{c.winRate}%</p>
+                <p className="text-[10px] font-mono text-slate-400">avg {signedR(c.avgR)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Mistakes Panel ─────────────────────────────────────────────────────────
+function MistakesPanel({ trades, loading }) {
+  const mistakes = buildMistakes(trades || []);
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <h2 className="text-sm font-semibold mb-1">Mistakes Review</h2>
+      <p className="text-[10px] font-mono text-slate-400 mb-4">Your recent journal notes on execution errors</p>
+      {loading ? (
+        <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-14 bg-slate-50 rounded-xl animate-pulse" />)}</div>
+      ) : mistakes.length === 0 ? (
+        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+          <p className="text-xs font-mono text-slate-400">Fill in the Mistakes review field in Notion to track execution errors here.</p>
+        </div>
+      ) : (
+        <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+          {mistakes.map((m, i) => (
+            <div key={i} className={`rounded-xl border-l-4 px-3 py-2.5 ${m.win ? "bg-slate-50 border-slate-300" : "bg-red-50 border-red-300"}`}>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono text-slate-400">{m.date}</span>
+                  <span className="text-[10px] font-mono text-slate-400">{m.pair}</span>
+                  <span className={`text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded-full
+                    ${m.win ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>
+                    {m.win ? "WIN" : "LOSS"}
+                  </span>
+                </div>
+                <span className={`text-[10px] font-mono font-semibold ${m.r >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                  {signedR(m.r)}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">{m.mistake}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Trade Quality Panel ───────────────────────────────────────────────────
 function TradeQualityPanel({ trades, loading }) {
   const stats = buildQualityStats(trades || []);
@@ -741,6 +941,9 @@ export default function MinimalTradeJournalDashboard() {
   const rangeLabel = { "7d": "last 7 days", "30d": "last 30 days", "90d": "last 90 days", "ytd": "year to date" }[range];
   const qualityStats = useMemo(() => buildQualityStats(data?.trades || []), [data]);
   const monthlyData = useMemo(() => buildMonthlyPnl(data?.trades || []), [data]);
+  const dayStats = useMemo(() => buildDayStats(data?.trades || []), [data]);
+  const confluenceStats = useMemo(() => buildConfluenceStats(data?.trades || []), [data]);
+  const mistakesList = useMemo(() => buildMistakes(data?.trades || []), [data]);
   const isFunded = account === "funded";
   const lossStreakWarning = streak.type === "loss" && streak.current >= 2
     ? `${streak.current} losses in a row — consider stepping back` : null;
@@ -897,6 +1100,13 @@ export default function MinimalTradeJournalDashboard() {
         <section className="grid gap-4 xl:grid-cols-2">
           <TradeQualityPanel trades={data?.trades} loading={loading} />
           <MonthlyPnlChart trades={data?.trades} loading={loading} />
+        </section>
+
+        {/* Day + Confluence + Mistakes */}
+        <section className="grid gap-4 xl:grid-cols-3">
+          <DayAnalysisPanel trades={data?.trades} loading={loading} />
+          <ConfluencePanel trades={data?.trades} loading={loading} />
+          <MistakesPanel trades={data?.trades} loading={loading} />
         </section>
 
         {/* Setup stats + trade log */}
