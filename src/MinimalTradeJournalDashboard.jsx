@@ -14,7 +14,8 @@ import {
 const WORKER_URL = "https://noisy-rain-e6aftest.indersonlatrell7.workers.dev/";
 const PAYOUT_KEY = "myjournal_payout_target";
 const RULES_KEY   = "myjournal_rules";
-const GOALS_KEY   = "myjournal_goals";
+const GOALS_KEY    = "myjournal_goals";
+const SECTIONS_KEY = "myjournal_sections";
 
 const RANGES = [
   { label: "7D",  value: "7d"  },
@@ -187,8 +188,13 @@ function buildConfluenceStats(trades) {
     }
   }
   return Object.values(map)
-    .map(c => ({ ...c, winRate: Math.round((c.wins / c.count) * 100), avgR: Number((c.totalR / c.count).toFixed(2)), totalR: Number(c.totalR.toFixed(2)) }))
-    .sort((a, b) => b.winRate - a.winRate || b.count - a.count)
+    .map(c => {
+      const wr = c.wins / c.count;
+      const avgR = Number((c.totalR / c.count).toFixed(2));
+      const expectancy = Number(((wr * Math.max(0, avgR)) - ((1 - wr) * Math.abs(Math.min(0, avgR)))).toFixed(2));
+      return { ...c, winRate: Math.round(wr * 100), avgR, totalR: Number(c.totalR.toFixed(2)), expectancy };
+    })
+    .sort((a, b) => b.expectancy - a.expectancy || b.count - a.count)
     .slice(0, 10);
 }
 
@@ -217,6 +223,77 @@ async function fetchMacroIntel() {
 }
 
 // ─── Macro Panel ───────────────────────────────────────────────────────────
+// ─── Collapsible Section ───────────────────────────────────────────────────
+function Section({ id, title, subtitle, icon, children, openSections, toggleSection }) {
+  const isOpen = openSections[id] !== false;
+  return (
+    <div className="space-y-4">
+      <button
+        onClick={() => toggleSection(id)}
+        className="w-full flex items-center justify-between group"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-lg">{icon}</span>
+          <div className="text-left">
+            <p className="text-sm font-bold tracking-tight text-slate-900 group-hover:text-slate-700 transition-colors">{title}</p>
+            {subtitle && <p className="text-[10px] font-mono text-slate-400">{subtitle}</p>}
+          </div>
+        </div>
+        <div className={`w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center text-slate-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}>
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path d="M2 4l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+      </button>
+      {isOpen && <div className="space-y-4">{children}</div>}
+    </div>
+  );
+}
+
+// ─── Inline AI Insight ─────────────────────────────────────────────────────
+function InlineInsight({ prompt, trades, stats, color = "blue" }) {
+  const [insight, setInsight] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const colors = {
+    blue:    { bg: "bg-blue-50",    border: "border-blue-200",    text: "text-blue-700",    dot: "bg-blue-400"    },
+    emerald: { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", dot: "bg-emerald-400" },
+    amber:   { bg: "bg-amber-50",   border: "border-amber-200",   text: "text-amber-700",   dot: "bg-amber-400"   },
+  };
+  const c = colors[color] || colors.blue;
+
+  useEffect(() => {
+    if (!trades || trades.length === 0) return;
+    let cancelled = false;
+    setLoading(true);
+    fetch(WORKER_URL + "chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: prompt, trades, stats }),
+    })
+      .then(r => r.json())
+      .then(json => { if (!cancelled && json.success) setInsight(json.reply); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [trades?.length]);
+
+  if (loading) return (
+    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
+      <div className="w-1.5 h-1.5 rounded-full bg-slate-300 animate-pulse" />
+      <div className="h-3 bg-slate-100 rounded animate-pulse w-48" />
+    </div>
+  );
+  if (!insight) return null;
+
+  return (
+    <div className={`mt-3 pt-3 border-t border-slate-100 flex items-start gap-2 rounded-xl px-3 py-2 ${c.bg} border ${c.border}`}>
+      <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${c.dot}`} />
+      <p className={`text-[11px] font-mono leading-relaxed ${c.text}`}>{insight}</p>
+    </div>
+  );
+}
+
 function MacroPanel({ macro, macroLoading, macroError, onRefresh }) {
   const sentimentColors = {
     "risk-on":  { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", dot: "bg-emerald-500" },
@@ -517,6 +594,8 @@ function InsightCard({ insight }) {
 
 function SetupRow({ setup }) {
   const pos = setup.totalR >= 0;
+  const wr = setup.winRate / 100;
+  const expectancy = Number(((wr * Math.max(0, setup.avgR)) - ((1 - wr) * Math.abs(Math.min(0, setup.avgR)))).toFixed(2));
   return (
     <div className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
       <div>
@@ -528,8 +607,8 @@ function SetupRow({ setup }) {
       </div>
       <div className="text-right">
         <p className={`text-sm font-mono font-semibold ${pos ? "text-emerald-600" : "text-red-500"}`}>{signedR(setup.totalR)}</p>
-        <p className="text-xs text-slate-400 font-mono">{setup.winRate}% WR</p>
-        <p className="text-xs text-slate-400 font-mono">avg {signedR(setup.avgR)}</p>
+        <p className="text-xs text-slate-400 font-mono">{setup.winRate}% WR · avg {signedR(setup.avgR)}</p>
+        <p className={`text-xs font-mono font-semibold ${expectancy >= 0 ? "text-blue-600" : "text-red-400"}`}>E: {signedR(expectancy)}</p>
       </div>
     </div>
   );
@@ -677,8 +756,9 @@ function ConfluencePanel({ trades, loading }) {
                 </div>
               </div>
               <div className="text-right flex-shrink-0">
-                <p className={`text-xs font-mono font-semibold ${c.winRate >= 50 ? "text-emerald-600" : "text-red-500"}`}>{c.winRate}%</p>
+                <p className={`text-xs font-mono font-semibold ${c.winRate >= 50 ? "text-emerald-600" : "text-red-500"}`}>{c.winRate}% WR</p>
                 <p className="text-[10px] font-mono text-slate-400">avg {signedR(c.avgR)}</p>
+                <p className={`text-[10px] font-mono font-semibold ${c.expectancy >= 0 ? "text-blue-600" : "text-red-400"}`}>E: {signedR(c.expectancy)}</p>
               </div>
             </div>
           ))}
@@ -1268,6 +1348,18 @@ export default function MinimalTradeJournalDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("setups");
+  const [openSections, setOpenSections] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(SECTIONS_KEY) || "{}"); }
+    catch { return {}; }
+  });
+
+  function toggleSection(id) {
+    setOpenSections(prev => {
+      const updated = { ...prev, [id]: prev[id] === false ? true : false };
+      localStorage.setItem(SECTIONS_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }
 
   // Macro state
   const [macro, setMacro] = useState(null);
@@ -1406,91 +1498,192 @@ export default function MinimalTradeJournalDashboard() {
             positive={data ? data.avgR >= 0 : undefined} icon={TrendingUp} loading={loading} />
         </section>
 
-        {/* Equity + Insights + Macro */}
-        <section className="grid gap-4 xl:grid-cols-3">
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
-            className="xl:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-            <div className="flex items-center justify-between mb-1">
-              <h2 className="text-sm font-semibold">Equity Curve</h2>
-              {data && (
-                <span className={`text-[10px] font-mono px-2 py-1 rounded-full
-                  ${data.totalR >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
-                  {signedR(data.totalR)} total
-                </span>
-              )}
+        {/* ── Next Best Action — moved up, full prominence ── */}
+        <div className="bg-white rounded-2xl border-2 border-slate-900 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-sm font-bold tracking-tight">Next Best Action</h2>
+            <span className="text-[10px] font-mono text-slate-400">{data ? `${data.count} trades · ${rangeLabel}` : "loading…"}</span>
+          </div>
+          {loading ? (
+            <div className="flex gap-3">{[1,2,3].map(i => <div key={i} className="h-14 flex-1 bg-slate-50 rounded-xl animate-pulse" />)}</div>
+          ) : data?.insights?.length ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {data.insights.map((ins, i) => <InsightCard key={i} insight={ins} />)}
             </div>
-            <p className="text-[10px] font-mono text-slate-400 mb-4">Cumulative R — tracks growth and drawdown</p>
-            {loading ? <div className="h-72 bg-slate-50 rounded-xl animate-pulse" /> :
-              equityCurve.length === 0 ? (
-                <div className="h-72 flex items-center justify-center text-xs font-mono text-slate-400">No trade data for this range.</div>
-              ) : (
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={equityCurve} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey="label" tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
-                      <YAxis tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={v => v + "R"} width={42} />
-                      <Tooltip content={<EquityTooltip />} />
-                      <Line type="monotone" dataKey="equity"
-                        stroke={isFunded ? "#f59e0b" : (data?.totalR >= 0 ? "#16a34a" : "#dc2626")}
-                        strokeWidth={2.5}
-                        dot={equityCurve.length > 30 ? false : { r: 3, strokeWidth: 0, fill: isFunded ? "#f59e0b" : "#16a34a" }}
-                        activeDot={{ r: 4, strokeWidth: 0 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
+          ) : (
+            <p className="text-xs font-mono text-slate-400">Add notes to your Notion trades to unlock behavior pattern detection.</p>
+          )}
+        </div>
+
+        {/* divider */}
+        <div className="border-t border-slate-200" />
+
+        {/* ── SECTION 1: Performance ── */}
+        <Section id="performance" title="Performance" subtitle="Equity, streaks, weekly summary, monthly P&L" icon="📈" openSections={openSections} toggleSection={toggleSection}>
+          <section className="grid gap-4 xl:grid-cols-3">
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
+              className="xl:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-sm font-semibold">Equity Curve</h2>
+                {data && (
+                  <span className={`text-[10px] font-mono px-2 py-1 rounded-full
+                    ${data.totalR >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                    {signedR(data.totalR)} total
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] font-mono text-slate-400 mb-4">Cumulative R — tracks growth and drawdown</p>
+              {loading ? <div className="h-72 bg-slate-50 rounded-xl animate-pulse" /> :
+                equityCurve.length === 0 ? (
+                  <div className="h-72 flex items-center justify-center text-xs font-mono text-slate-400">No trade data for this range.</div>
+                ) : (
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={equityCurve} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="label" tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
+                        <YAxis tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={v => v + "R"} width={42} />
+                        <Tooltip content={<EquityTooltip />} />
+                        <Line type="monotone" dataKey="equity"
+                          stroke={isFunded ? "#f59e0b" : (data?.totalR >= 0 ? "#16a34a" : "#dc2626")}
+                          strokeWidth={2.5}
+                          dot={equityCurve.length > 30 ? false : { r: 3, strokeWidth: 0, fill: isFunded ? "#f59e0b" : "#16a34a" }}
+                          activeDot={{ r: 4, strokeWidth: 0 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              <InlineInsight
+                prompt="In one sentence, identify the single most important pattern in this equity curve — what's driving the biggest gains or losses?"
+                trades={data?.trades} stats={{ count: data?.count, winRate: data?.winRate, totalR: data?.totalR, netProfit: data?.netProfit }}
+                color="blue"
+              />
+            </motion.div>
+            <div className="flex flex-col gap-4">
+              <PayoutTracker netPnl={netPnl} loading={loading} />
+              <MacroPanel macro={macro} macroLoading={macroLoading} macroError={macroError} onRefresh={loadMacro} />
+            </div>
+          </section>
+          <section className="grid gap-4 xl:grid-cols-3">
+            <div className="xl:col-span-2">
+              <WeeklyCalendar trades={data?.trades} loading={loading} />
+            </div>
+            <MonthlyPnlChart trades={data?.trades} loading={loading} />
+          </section>
+        </Section>
+
+        <div className="border-t border-slate-200" />
+
+        {/* ── SECTION 2: Setups ── */}
+        <Section id="setups" title="Setups" subtitle="Setup stats, win rate, expectancy, trade log" icon="🎯" openSections={openSections} toggleSection={toggleSection}>
+          <section className="grid gap-4 xl:grid-cols-2">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+              <div className="flex gap-0 rounded-lg overflow-hidden border border-slate-200 w-fit mb-4">
+                {["setups", "trades"].map(tab => (
+                  <button key={tab} onClick={() => setActiveTab(tab)}
+                    className={`px-4 py-2 text-[11px] font-mono border-r border-slate-200 last:border-r-0 transition-colors duration-150 capitalize
+                      ${activeTab === tab ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+                    {tab === "setups" ? "Setup stats" : "Trade log"}
+                  </button>
+                ))}
+              </div>
+              {activeTab === "setups" && (
+                <>
+                  {loading ? (
+                    <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-14 bg-slate-50 rounded-xl animate-pulse" />)}</div>
+                  ) : data?.setupStats?.length ? (
+                    <div>{data.setupStats.map(s => <SetupRow key={s.setup} setup={s} />)}</div>
+                  ) : <p className="text-xs font-mono text-slate-400">No setups for this range.</p>}
+                  <InlineInsight
+                    prompt="In one sentence, which setup has the best expectancy and why should the trader focus on it?"
+                    trades={data?.trades} stats={{ count: data?.count, winRate: data?.winRate, totalR: data?.totalR, netProfit: data?.netProfit }}
+                    color="emerald"
+                  />
+                </>
+              )}
+              {activeTab === "trades" && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-100">
+                        {["Date","Pair","Setup","Result","Session","R / $"].map(h => (
+                          <th key={h} className="pb-2 px-3 text-[9px] font-mono uppercase tracking-widest text-slate-400 font-normal">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loading ? (
+                        <tr><td colSpan={6} className="py-4 text-xs font-mono text-slate-400 text-center">Loading…</td></tr>
+                      ) : data?.trades?.length ? (
+                        data.trades.slice(0, 20).map(t => <TradeRow key={t.id} trade={t} />)
+                      ) : (
+                        <tr><td colSpan={6} className="py-4 text-xs font-mono text-slate-400">No trades in this range.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               )}
-          </motion.div>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+              <h2 className="text-sm font-semibold mb-1">Win Rate by Setup</h2>
+              <p className="text-[10px] font-mono text-slate-400 mb-4">Green = 50%+, red = below 50%</p>
+              {loading ? <div className="h-72 bg-slate-50 rounded-xl animate-pulse" /> :
+                data?.setupStats?.length ? (
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={data.setupStats} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                        <XAxis dataKey="setup" tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
+                        <YAxis domain={[0, 100]} tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={v => v + "%"} width={36} />
+                        <Tooltip content={<SetupTooltip />} />
+                        <Bar dataKey="winRate" radius={[6, 6, 0, 0]}>
+                          {data.setupStats.map((s, i) => (
+                            <Cell key={i} fill={s.winRate >= 50 ? "rgba(22,163,74,0.75)" : "rgba(220,38,38,0.7)"} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-72 flex items-center justify-center text-xs font-mono text-slate-400">No setup data for this range.</div>
+                )}
+              <ConfluencePanel trades={data?.trades} loading={loading} />
+            </div>
+          </section>
+        </Section>
 
-          {/* Insights */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-            <h2 className="text-sm font-semibold mb-1">Next Best Action</h2>
-            <p className="text-[10px] font-mono text-slate-400 mb-4">
-              {data ? `${data.count} trades · ${rangeLabel}` : "Powered by your journal notes"}
-            </p>
-            {loading ? (
-              <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-16 bg-slate-50 rounded-xl animate-pulse" />)}</div>
-            ) : data?.insights?.length ? (
-              <div className="space-y-3">{data.insights.map((ins, i) => <InsightCard key={i} insight={ins} />)}</div>
-            ) : (
-              <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
-                <p className="text-xs font-semibold text-slate-600 mb-1">No flags detected</p>
-                <p className="text-xs font-mono text-slate-400 leading-relaxed">Add notes to your Notion trades to unlock behavior pattern detection.</p>
+        <div className="border-t border-slate-200" />
+
+        {/* ── SECTION 3: Psychology ── */}
+        <Section id="psychology" title="Psychology" subtitle="Trade quality, day analysis, mistakes, rules, goals" icon="🧠" openSections={openSections} toggleSection={toggleSection}>
+          <section className="grid gap-4 xl:grid-cols-2">
+            <div>
+              <TradeQualityPanel trades={data?.trades} loading={loading} />
+              <div className="mt-4">
+                <InlineInsight
+                  prompt="In one sentence, based on good vs bad trade quality data, what is the single biggest execution habit to fix?"
+                  trades={data?.trades} stats={{ count: data?.count, winRate: data?.winRate, totalR: data?.totalR, netProfit: data?.netProfit }}
+                  color="amber"
+                />
               </div>
-            )}
-          </div>
-        </section>
+            </div>
+            <DayAnalysisPanel trades={data?.trades} loading={loading} />
+          </section>
+          <section className="grid gap-4 xl:grid-cols-2">
+            <MistakesPanel trades={data?.trades} loading={loading} />
+            <div className="flex flex-col gap-4">
+              <RulesPanel trades={data?.trades} />
+              <GoalTracker data={data} loading={loading} />
+            </div>
+          </section>
+        </Section>
 
-        {/* Macro panel full width */}
-        <section className="grid gap-4 xl:grid-cols-3">
-          <div className="xl:col-span-2">
-            <WeeklyCalendar trades={data?.trades} loading={loading} />
-          </div>
-          <div className="flex flex-col gap-4">
-            <MacroPanel macro={macro} macroLoading={macroLoading} macroError={macroError} onRefresh={loadMacro} />
-            <PayoutTracker netPnl={netPnl} loading={loading} />
-          </div>
-        </section>
+        <div className="border-t border-slate-200" />
 
-        {/* Trade Quality + Monthly P&L */}
-        <section className="grid gap-4 xl:grid-cols-2">
-          <TradeQualityPanel trades={data?.trades} loading={loading} />
-          <MonthlyPnlChart trades={data?.trades} loading={loading} />
-        </section>
-
-        {/* Day + Confluence + Mistakes */}
-        <section className="grid gap-4 xl:grid-cols-3">
-          <DayAnalysisPanel trades={data?.trades} loading={loading} />
-          <ConfluencePanel trades={data?.trades} loading={loading} />
-          <MistakesPanel trades={data?.trades} loading={loading} />
-        </section>
-
-        {/* Rules + Goals + Journal AI */}
-        <section className="grid gap-4 xl:grid-cols-3">
-          <RulesPanel trades={data?.trades} />
-          <GoalTracker data={data} loading={loading} />
+        {/* ── SECTION 4: AI Insights ── */}
+        <Section id="ai" title="AI Insights" subtitle="Ask questions about your own trade data — powered by Groq" icon="🤖" openSections={openSections} toggleSection={toggleSection}>
           <JournalAI data={data} />
-        </section>
+        </Section>
 
         {/* Setup stats + trade log */}
         <section className="grid gap-4 xl:grid-cols-2">
