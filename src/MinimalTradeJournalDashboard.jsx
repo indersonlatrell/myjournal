@@ -101,6 +101,59 @@ function buildWeeklyGrid(trades) {
     }));
 }
 
+// ─── Trade Quality ─────────────────────────────────────────────────────────
+function buildQualityStats(trades) {
+  if (!trades || !trades.length) return null;
+  const good = trades.filter(t => t.tradeQuality === "GOOD");
+  const bad  = trades.filter(t => t.tradeQuality === "BAD");
+  const untagged = trades.filter(t => !t.tradeQuality);
+
+  function stats(arr) {
+    if (!arr.length) return { count: 0, winRate: 0, avgR: 0, totalPnl: 0 };
+    const wins = arr.filter(t => t.win).length;
+    const totalR = arr.reduce((s, t) => s + (typeof t.r === "number" ? t.r : 0), 0);
+    const totalPnl = arr.reduce((s, t) => s + (typeof t.pnl === "number" ? t.pnl : 0), 0);
+    return {
+      count: arr.length,
+      winRate: Math.round((wins / arr.length) * 100),
+      avgR: Number((totalR / arr.length).toFixed(2)),
+      totalPnl: Number(totalPnl.toFixed(2)),
+    };
+  }
+
+  return {
+    good: stats(good),
+    bad:  stats(bad),
+    untagged: stats(untagged),
+    qualityRate: trades.length ? Math.round((good.length / trades.length) * 100) : 0,
+  };
+}
+
+// ─── Monthly P&L ───────────────────────────────────────────────────────────
+function buildMonthlyPnl(trades) {
+  if (!trades || !trades.length) return [];
+  const months = {};
+  for (const t of trades) {
+    if (!t.date) continue;
+    const d = new Date(t.date);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
+    if (!months[key]) months[key] = { key, label, pnl: 0, r: 0, trades: 0, wins: 0 };
+    months[key].pnl += typeof t.pnl === "number" ? t.pnl : 0;
+    months[key].r   += typeof t.r  === "number" ? t.r  : 0;
+    months[key].trades++;
+    if (t.win) months[key].wins++;
+  }
+  return Object.values(months)
+    .sort((a, b) => a.key.localeCompare(b.key))
+    .map(m => ({
+      ...m,
+      pnl: Number(m.pnl.toFixed(2)),
+      r:   Number(m.r.toFixed(2)),
+      winRate: m.trades ? Math.round((m.wins / m.trades) * 100) : 0,
+    }));
+}
+
 // ─── Macro AI fetch ────────────────────────────────────────────────────────
 async function fetchMacroIntel() {
   const res = await fetch(WORKER_URL + "macro");
@@ -473,6 +526,149 @@ function SetupTooltip({ active, payload, label }) {
   );
 }
 
+// ─── Trade Quality Panel ───────────────────────────────────────────────────
+function TradeQualityPanel({ trades, loading }) {
+  const stats = buildQualityStats(trades || []);
+
+  const rows = [
+    { label: "Good trades", key: "good",     color: "emerald" },
+    { label: "Bad trades",  key: "bad",      color: "red"     },
+    { label: "Untagged",    key: "untagged", color: "slate"   },
+  ];
+
+  const colorMap = {
+    emerald: { bg: "bg-emerald-50", text: "text-emerald-700", bar: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-700" },
+    red:     { bg: "bg-red-50",     text: "text-red-600",     bar: "bg-red-400",     badge: "bg-red-100 text-red-600"         },
+    slate:   { bg: "bg-slate-50",   text: "text-slate-500",   bar: "bg-slate-300",   badge: "bg-slate-100 text-slate-500"     },
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <h2 className="text-sm font-semibold mb-1">Trade Quality Score</h2>
+      <p className="text-[10px] font-mono text-slate-400 mb-4">
+        Based on your GOOD / BAD tags in Notion
+      </p>
+
+      {loading ? (
+        <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-14 bg-slate-50 rounded-xl animate-pulse" />)}</div>
+      ) : !stats || stats.good.count + stats.bad.count === 0 ? (
+        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+          <p className="text-xs font-mono text-slate-400">Tag your trades as GOOD or BAD in Notion to unlock quality tracking.</p>
+        </div>
+      ) : (
+        <>
+          {/* Quality rate */}
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-2xl font-bold font-mono text-emerald-600">{stats.qualityRate}%</p>
+              <p className="text-[10px] font-mono text-slate-400">of trades are good quality</p>
+            </div>
+            <div className="w-20 h-20 relative flex items-center justify-center">
+              <svg viewBox="0 0 36 36" className="w-20 h-20 -rotate-90">
+                <circle cx="18" cy="18" r="15.9" fill="none" stroke="#f1f5f9" strokeWidth="3" />
+                <circle cx="18" cy="18" r="15.9" fill="none" stroke="#16a34a" strokeWidth="3"
+                  strokeDasharray={`${stats.qualityRate} ${100 - stats.qualityRate}`}
+                  strokeLinecap="round" />
+              </svg>
+              <span className="absolute text-xs font-mono font-bold text-slate-700">{stats.qualityRate}%</span>
+            </div>
+          </div>
+
+          {/* Rows */}
+          <div className="space-y-3">
+            {rows.map(({ label, key, color }) => {
+              const s = stats[key];
+              const c = colorMap[color];
+              if (s.count === 0) return null;
+              return (
+                <div key={key} className={`rounded-xl px-4 py-3 ${c.bg}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-xs font-semibold ${c.text}`}>{label}</span>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${c.badge}`}>{s.count} trades</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    <div>
+                      <p className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">Win Rate</p>
+                      <p className={`text-sm font-mono font-semibold ${c.text}`}>{s.winRate}%</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">Avg R</p>
+                      <p className={`text-sm font-mono font-semibold ${c.text}`}>{signedR(s.avgR)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">P&L</p>
+                      <p className={`text-sm font-mono font-semibold ${c.text}`}>{signedUSD(s.totalPnl)}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Monthly P&L Chart ─────────────────────────────────────────────────────
+function MonthlyPnlChart({ trades, loading }) {
+  const months = buildMonthlyPnl(trades || []);
+
+  function MonthTooltip({ active, payload, label }) {
+    if (!active || !payload?.length) return null;
+    const val = payload[0].value;
+    return (
+      <div className="bg-slate-900 text-white text-xs font-mono rounded-lg px-3 py-2 shadow-xl">
+        <p className="text-slate-400 mb-0.5">{label}</p>
+        <p className={val >= 0 ? "text-emerald-400" : "text-red-400"}>{signedUSD(val)}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <h2 className="text-sm font-semibold mb-1">Monthly P&L</h2>
+      <p className="text-[10px] font-mono text-slate-400 mb-4">Net dollar profit per month</p>
+
+      {loading ? (
+        <div className="h-56 bg-slate-50 rounded-xl animate-pulse" />
+      ) : months.length === 0 ? (
+        <div className="h-56 flex items-center justify-center text-xs font-mono text-slate-400">No data for this range.</div>
+      ) : (
+        <>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={months} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="label" tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false}
+                  tickFormatter={v => "$" + (Math.abs(v) >= 1000 ? (v/1000).toFixed(1) + "k" : v)} width={48} />
+                <Tooltip content={<MonthTooltip />} />
+                <Bar dataKey="pnl" radius={[6, 6, 0, 0]}>
+                  {months.map((m, i) => (
+                    <Cell key={i} fill={m.pnl >= 0 ? "rgba(22,163,74,0.75)" : "rgba(220,38,38,0.7)"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Monthly summary row */}
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            {months.slice(-3).map((m, i) => (
+              <div key={i} className={`rounded-xl px-3 py-2 ${m.pnl >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
+                <p className="text-[9px] font-mono text-slate-400 uppercase tracking-wider mb-1">{m.label}</p>
+                <p className={`text-sm font-mono font-semibold ${m.pnl >= 0 ? "text-emerald-600" : "text-red-500"}`}>{signedUSD(m.pnl)}</p>
+                <p className="text-[10px] font-mono text-slate-400">{m.winRate}% WR · {m.trades}T</p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AccountToggle({ account, onChange }) {
   return (
     <div className="flex rounded-xl overflow-hidden border border-slate-200 bg-white">
@@ -543,6 +739,8 @@ export default function MinimalTradeJournalDashboard() {
   }, [data]);
 
   const rangeLabel = { "7d": "last 7 days", "30d": "last 30 days", "90d": "last 90 days", "ytd": "year to date" }[range];
+  const qualityStats = useMemo(() => buildQualityStats(data?.trades || []), [data]);
+  const monthlyData = useMemo(() => buildMonthlyPnl(data?.trades || []), [data]);
   const isFunded = account === "funded";
   const lossStreakWarning = streak.type === "loss" && streak.current >= 2
     ? `${streak.current} losses in a row — consider stepping back` : null;
@@ -693,6 +891,12 @@ export default function MinimalTradeJournalDashboard() {
             <MacroPanel macro={macro} macroLoading={macroLoading} macroError={macroError} onRefresh={loadMacro} />
             <PayoutTracker netPnl={netPnl} loading={loading} />
           </div>
+        </section>
+
+        {/* Trade Quality + Monthly P&L */}
+        <section className="grid gap-4 xl:grid-cols-2">
+          <TradeQualityPanel trades={data?.trades} loading={loading} />
+          <MonthlyPnlChart trades={data?.trades} loading={loading} />
         </section>
 
         {/* Setup stats + trade log */}
