@@ -39,14 +39,17 @@ const INSIGHT_STYLES = {
 // ─── Helpers ───────────────────────────────────────────────────────────────
 function buildEquityCurve(trades) {
   let equity = 0;
+  let pnl = 0;
   return [...trades]
     .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0))
     .map((t, i) => {
-      equity += typeof t.r === "number" ? t.r : 0;
+      equity += typeof t.r   === "number" ? t.r   : 0;
+      pnl    += typeof t.pnl === "number" ? t.pnl : 0;
       const d = t.date ? new Date(t.date) : null;
       return {
-        label: d ? d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : `#${i + 1}`,
+        label:  d ? d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : `#${i + 1}`,
         equity: Number(equity.toFixed(2)),
+        pnl:    Number(pnl.toFixed(2)),
       };
     });
 }
@@ -645,6 +648,17 @@ function EquityTooltip({ active, payload, label }) {
     <div className="bg-slate-900 text-white text-xs font-mono rounded-lg px-3 py-2 shadow-xl">
       <p className="text-slate-400 mb-0.5">{label}</p>
       <p className={val >= 0 ? "text-emerald-400" : "text-red-400"}>{signedR(val)}</p>
+    </div>
+  );
+}
+
+function PnlTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  const val = payload[0].value;
+  return (
+    <div className="bg-slate-900 text-white text-xs font-mono rounded-lg px-3 py-2 shadow-xl">
+      <p className="text-slate-400 mb-0.5">{label}</p>
+      <p className={val >= 0 ? "text-emerald-400" : "text-red-400"}>{signedUSD(val)}</p>
     </div>
   );
 }
@@ -1348,6 +1362,7 @@ export default function MinimalTradeJournalDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("setups");
+  const [curveMode, setCurveMode] = useState("r");
   const [openSections, setOpenSections] = useState(() => {
     try { return JSON.parse(localStorage.getItem(SECTIONS_KEY) || "{}"); }
     catch { return {}; }
@@ -1525,14 +1540,33 @@ export default function MinimalTradeJournalDashboard() {
               className="xl:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
               <div className="flex items-center justify-between mb-1">
                 <h2 className="text-sm font-semibold">Equity Curve</h2>
-                {data && (
-                  <span className={`text-[10px] font-mono px-2 py-1 rounded-full
-                    ${data.totalR >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
-                    {signedR(data.totalR)} total
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {/* R / $ toggle */}
+                  <div className="flex rounded-lg overflow-hidden border border-slate-200">
+                    <button
+                      onClick={() => setCurveMode("r")}
+                      className={`px-3 py-1 text-[11px] font-mono transition-colors border-r border-slate-200
+                        ${curveMode === "r" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+                      R
+                    </button>
+                    <button
+                      onClick={() => setCurveMode("pnl")}
+                      className={`px-3 py-1 text-[11px] font-mono transition-colors
+                        ${curveMode === "pnl" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+                      $
+                    </button>
+                  </div>
+                  {data && (
+                    <span className={`text-[10px] font-mono px-2 py-1 rounded-full
+                      ${(curveMode === "r" ? data.totalR : netPnl) >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
+                      {curveMode === "r" ? signedR(data.totalR) : signedUSD(netPnl)} total
+                    </span>
+                  )}
+                </div>
               </div>
-              <p className="text-[10px] font-mono text-slate-400 mb-4">Cumulative R — tracks growth and drawdown</p>
+              <p className="text-[10px] font-mono text-slate-400 mb-4">
+                {curveMode === "r" ? "Cumulative R — tracks growth and drawdown" : "Cumulative P&L in dollars"}
+              </p>
               {loading ? <div className="h-72 bg-slate-50 rounded-xl animate-pulse" /> :
                 equityCurve.length === 0 ? (
                   <div className="h-72 flex items-center justify-center text-xs font-mono text-slate-400">No trade data for this range.</div>
@@ -1542,10 +1576,16 @@ export default function MinimalTradeJournalDashboard() {
                       <LineChart data={equityCurve} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                         <XAxis dataKey="label" tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
-                        <YAxis tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={v => v + "R"} width={42} />
-                        <Tooltip content={<EquityTooltip />} />
-                        <Line type="monotone" dataKey="equity"
-                          stroke={isFunded ? "#f59e0b" : (data?.totalR >= 0 ? "#16a34a" : "#dc2626")}
+                        <YAxis
+                          tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }}
+                          tickLine={false} axisLine={false}
+                          tickFormatter={v => curveMode === "r" ? v + "R" : "$" + (Math.abs(v) >= 1000 ? (v/1000).toFixed(1) + "k" : v)}
+                          width={48}
+                        />
+                        <Tooltip content={curveMode === "r" ? <EquityTooltip /> : <PnlTooltip />} />
+                        <Line type="monotone"
+                          dataKey={curveMode === "r" ? "equity" : "pnl"}
+                          stroke={isFunded ? "#f59e0b" : ((curveMode === "r" ? data?.totalR : netPnl) >= 0 ? "#16a34a" : "#dc2626")}
                           strokeWidth={2.5}
                           dot={equityCurve.length > 30 ? false : { r: 3, strokeWidth: 0, fill: isFunded ? "#f59e0b" : "#16a34a" }}
                           activeDot={{ r: 4, strokeWidth: 0 }} />
