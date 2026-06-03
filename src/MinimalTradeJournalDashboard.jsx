@@ -1582,7 +1582,7 @@ export default function MinimalTradeJournalDashboard() {
                           tickFormatter={v => curveMode === "r" ? v + "R" : "$" + (Math.abs(v) >= 1000 ? (v/1000).toFixed(1) + "k" : v)}
                           width={48}
                         />
-                        <Tooltip content={curveMode === "r" ? <EquityTooltip /> : <PnlTooltip />} />
+                        <Tooltip content={curveMode === "r" ? EquityTooltip : PnlTooltip} />
                         <Line type="monotone"
                           dataKey={curveMode === "r" ? "equity" : "pnl"}
                           stroke={isFunded ? "#f59e0b" : ((curveMode === "r" ? data?.totalR : netPnl) >= 0 ? "#16a34a" : "#dc2626")}
