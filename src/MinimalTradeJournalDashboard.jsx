@@ -16,6 +16,7 @@ const PAYOUT_KEY = "myjournal_payout_target";
 const RULES_KEY   = "myjournal_rules";
 const GOALS_KEY    = "myjournal_goals";
 const SECTIONS_KEY = "myjournal_sections";
+const ONEDONE_KEY  = "myjournal_oneanddone";
 
 const RANGES = [
   { label: "7D",  value: "7d"  },
@@ -1089,6 +1090,197 @@ function RulesPanel({ trades }) {
   );
 }
 
+// ─── 1-and-Done Streak Tracker ──────────────────────────────────────────────
+// Discipline over P&L: one A+ trade (or none), then walk away. A day with more
+// trades than your cap = "chased" and breaks the streak. Auto-derived from your
+// real trades; any day can be overridden by clicking it on the calendar.
+function OneAndDoneTracker({ trades }) {
+  const [cfg, setCfg] = useState(() => {
+    try { return { cap: 1, overrides: {}, ...(JSON.parse(localStorage.getItem(ONEDONE_KEY) || "{}")) }; }
+    catch { return { cap: 1, overrides: {} }; }
+  });
+  const [view, setView] = useState(() => new Date());
+
+  function save(next) {
+    setCfg(next);
+    localStorage.setItem(ONEDONE_KEY, JSON.stringify(next));
+  }
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const todayISO = iso(new Date());
+
+  // trades per calendar day
+  const counts = useMemo(() => {
+    const c = {};
+    (trades || []).forEach(t => {
+      const k = (t.date || "").slice(0, 10);
+      if (k) c[k] = (c[k] || 0) + 1;
+    });
+    return c;
+  }, [trades]);
+
+  // status per day: override wins, else auto from counts vs cap
+  const statusOf = useCallback((k) => {
+    if (cfg.overrides[k]) return cfg.overrides[k];         // 'held' | 'chased' | 'rest'
+    const n = counts[k];
+    if (n == null) return null;                            // no trades, no override
+    return n > cfg.cap ? "chased" : "held";
+  }, [cfg, counts]);
+
+  const stats = useMemo(() => {
+    const days = new Set([...Object.keys(counts), ...Object.keys(cfg.overrides)]);
+    const sorted = [...days].sort();
+    let held = 0, tradingDays = 0, tradeTotal = 0;
+    sorted.forEach(k => {
+      const s = statusOf(k);
+      if (s === "held") { held++; tradingDays++; }
+      else if (s === "chased") { tradingDays++; }
+      tradeTotal += counts[k] || 0;
+    });
+    // longest run of held (rest = neutral/skip, chased = reset)
+    let best = 0, run = 0;
+    sorted.forEach(k => {
+      const s = statusOf(k);
+      if (s === "held") { run++; best = Math.max(best, run); }
+      else if (s === "chased") { run = 0; }
+    });
+    // current streak: walk backwards over calendar days from today
+    let streak = 0; const cur = new Date();
+    for (let i = 0; i < 400; i++) {
+      const s = statusOf(iso(cur));
+      if (s === "chased") break;
+      if (s === "held") streak++;
+      cur.setDate(cur.getDate() - 1);
+    }
+    best = Math.max(best, streak);
+    const rate = tradingDays ? Math.round((held / tradingDays) * 100) : null;
+    const avg = tradingDays ? (tradeTotal / tradingDays) : 0;
+    return { streak, best, rate, held, tradingDays, avg };
+  }, [counts, cfg, statusOf]);
+
+  const monthStats = useMemo(() => {
+    const y = view.getFullYear(), m = view.getMonth();
+    let held = 0, logged = 0;
+    const days = new Set([...Object.keys(counts), ...Object.keys(cfg.overrides)]);
+    days.forEach(k => {
+      const [Y, M] = k.split("-").map(Number);
+      if (Y === y && M === m + 1) {
+        const s = statusOf(k);
+        if (s === "held") { held++; logged++; }
+        else if (s === "chased") { logged++; }
+      }
+    });
+    return { held, logged };
+  }, [view, counts, cfg, statusOf]);
+
+  function cycleDay(k) {
+    const order = [undefined, "held", "chased", "rest"];
+    const next = order[(order.indexOf(cfg.overrides[k]) + 1) % order.length];
+    const ov = { ...cfg.overrides };
+    if (next === undefined) delete ov[k]; else ov[k] = next;
+    save({ ...cfg, overrides: ov });
+  }
+
+  const todayStatus = statusOf(todayISO);
+
+  // calendar cells
+  const y = view.getFullYear(), m = view.getMonth();
+  const firstDow = new Date(y, m, 1).getDay();
+  const dim = new Date(y, m + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= dim; d++) cells.push(d);
+
+  const cellCls = (s) =>
+    s === "held" ? "bg-emerald-50 border-emerald-200 text-emerald-600"
+    : s === "chased" ? "bg-red-50 border-red-200 text-red-600"
+    : s === "rest" ? "bg-slate-100 border-slate-200 text-slate-400"
+    : "bg-white border-slate-200 text-slate-300";
+  const mark = (s) => s === "held" ? "✓" : s === "chased" ? "✕" : s === "rest" ? "–" : "";
+
+  const broken = todayStatus === "chased";
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-sm font-semibold">1-and-Done Tracker</h2>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-mono text-slate-400">cap</span>
+          {[1, 2].map(n => (
+            <button key={n} onClick={() => save({ ...cfg, cap: n })}
+              className={`text-[10px] font-mono px-2 py-0.5 rounded-full border transition-colors ${cfg.cap === n ? "bg-slate-950 text-white border-slate-950" : "text-slate-400 border-slate-200 hover:border-slate-400"}`}>
+              {n}/day
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="text-[10px] font-mono text-slate-400 mb-4">Discipline beats P&amp;L · one A+ trade then walk away · a day over {cfg.cap} trade{cfg.cap > 1 ? "s" : ""} breaks the streak</p>
+
+      {/* stat cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+        <div className={`rounded-xl border px-3 py-2.5 ${broken ? "bg-red-50 border-red-200" : "bg-emerald-50 border-emerald-100"}`}>
+          <div className="text-[9px] font-mono uppercase tracking-widest text-slate-400">Current streak</div>
+          <div className={`text-xl font-bold mt-0.5 ${broken ? "text-red-600" : "text-emerald-600"}`}>{stats.streak}</div>
+          <div className="text-[9px] font-mono text-slate-400">{broken ? "reset today — go again tmrw" : "disciplined days in a row"}</div>
+        </div>
+        <div className="rounded-xl border bg-slate-50 border-slate-200 px-3 py-2.5">
+          <div className="text-[9px] font-mono uppercase tracking-widest text-slate-400">Longest</div>
+          <div className="text-xl font-bold mt-0.5 text-slate-700">{stats.best}</div>
+          <div className="text-[9px] font-mono text-slate-400">best discipline run</div>
+        </div>
+        <div className="rounded-xl border bg-slate-50 border-slate-200 px-3 py-2.5">
+          <div className="text-[9px] font-mono uppercase tracking-widest text-slate-400">Discipline rate</div>
+          <div className="text-xl font-bold mt-0.5 text-slate-700">{stats.rate == null ? "—" : stats.rate + "%"}</div>
+          <div className="text-[9px] font-mono text-slate-400">{stats.held}/{stats.tradingDays} trading days</div>
+        </div>
+        <div className="rounded-xl border bg-slate-50 border-slate-200 px-3 py-2.5">
+          <div className="text-[9px] font-mono uppercase tracking-widest text-slate-400">Avg trades/day</div>
+          <div className={`text-xl font-bold mt-0.5 ${stats.avg > cfg.cap ? "text-red-600" : "text-emerald-600"}`}>{stats.avg.toFixed(1)}</div>
+          <div className="text-[9px] font-mono text-slate-400">target ≤ {cfg.cap}</div>
+        </div>
+      </div>
+
+      {/* calendar */}
+      <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <button onClick={() => setView(new Date(y, m - 1, 1))} className="text-slate-400 hover:text-slate-700 text-xs font-mono px-2">‹</button>
+          <span className="text-[11px] font-mono tracking-wider text-slate-600">{view.toLocaleString("en", { month: "long" }).toUpperCase()} {y}</span>
+          <button onClick={() => setView(new Date(y, m + 1, 1))} className="text-slate-400 hover:text-slate-700 text-xs font-mono px-2">›</button>
+        </div>
+        <div className="grid grid-cols-7 gap-1 mb-1">
+          {["S","M","T","W","T","F","S"].map((d, i) => <div key={i} className="text-center text-[8px] font-mono text-slate-400">{d}</div>)}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {cells.map((d, i) => {
+            if (d == null) return <div key={i} />;
+            const k = iso(new Date(y, m, d));
+            const s = statusOf(k);
+            const isToday = k === todayISO;
+            return (
+              <button key={i} onClick={() => cycleDay(k)} title={counts[k] ? `${counts[k]} trade${counts[k] > 1 ? "s" : ""}` : "no trades — click to log"}
+                className={`relative aspect-square rounded-md border text-[11px] font-mono flex items-center justify-center transition-colors hover:brightness-95 ${cellCls(s)} ${isToday ? "ring-1 ring-slate-900" : ""}`}>
+                <span className="absolute top-0.5 left-1 text-[7px] text-slate-400">{d}</span>
+                <span className="font-bold">{mark(s)}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap gap-3 mt-3 text-[9px] font-mono text-slate-400">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-400 inline-block" />one &amp; done</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-400 inline-block" />chased</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-slate-300 inline-block" />sat out</span>
+          <span className="ml-auto">click a day to override · {monthStats.held}/{monthStats.logged} held this month</span>
+        </div>
+      </div>
+
+      <div className="rounded-xl bg-slate-50 border-l-2 border-amber-300 border border-slate-200 px-4 py-2.5 mt-3">
+        <p className="text-[11px] text-slate-600 leading-relaxed">
+          <span className="font-semibold text-slate-800">A win you give back was never a win.</span> Take your one trade, then flatten &amp; close the platform — the day counts as green even if it lost.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ─── Goal Tracker ───────────────────────────────────────────────────────────
 function GoalTracker({ data, loading }) {
   const [goals, setGoals] = useState(() => {
@@ -1715,6 +1907,9 @@ export default function MinimalTradeJournalDashboard() {
               <RulesPanel trades={data?.trades} />
               <GoalTracker data={data} loading={loading} />
             </div>
+          </section>
+          <section>
+            <OneAndDoneTracker trades={data?.trades} />
           </section>
         </Section>
 
