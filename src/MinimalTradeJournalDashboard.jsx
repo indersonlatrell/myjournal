@@ -1091,13 +1091,13 @@ function RulesPanel({ trades }) {
 }
 
 // ─── 1-and-Done Streak Tracker ──────────────────────────────────────────────
-// Discipline over P&L: one A+ trade (or none), then walk away. A day with more
-// trades than your cap = "chased" and breaks the streak. Auto-derived from your
-// real trades; any day can be overridden by clicking it on the calendar.
+// Discipline over P&L. Source of truth = the "Disciplined" checkbox on each
+// trade in Notion. A day is green only when every trade that day is marked
+// Disciplined. Any day can still be manually overridden on the calendar.
 function OneAndDoneTracker({ trades }) {
   const [cfg, setCfg] = useState(() => {
-    try { return { cap: 1, overrides: {}, ...(JSON.parse(localStorage.getItem(ONEDONE_KEY) || "{}")) }; }
-    catch { return { cap: 1, overrides: {} }; }
+    try { return { overrides: {}, ...(JSON.parse(localStorage.getItem(ONEDONE_KEY) || "{}")) }; }
+    catch { return { overrides: {} }; }
   });
   const [view, setView] = useState(() => new Date());
 
@@ -1108,42 +1108,48 @@ function OneAndDoneTracker({ trades }) {
   const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const todayISO = iso(new Date());
 
-  // trades per calendar day
-  const counts = useMemo(() => {
-    const c = {};
+  // aggregate trades by day → { count, defined, allDisciplined }
+  const dayData = useMemo(() => {
+    const m = {};
     (trades || []).forEach(t => {
       const k = (t.date || "").slice(0, 10);
-      if (k) c[k] = (c[k] || 0) + 1;
+      if (!k) return;
+      if (!m[k]) m[k] = { count: 0, defined: 0, allDisc: true, pnl: 0 };
+      m[k].count++;
+      if (typeof t.pnl === "number") m[k].pnl += t.pnl;
+      if (typeof t.disciplined === "boolean") {
+        m[k].defined++;
+        if (!t.disciplined) m[k].allDisc = false;
+      }
     });
-    return c;
+    return m;
   }, [trades]);
+  const counts = dayData;
 
-  // status per day: override wins, else auto from counts vs cap
+  // status per day: manual override wins, else derived from Notion "Disciplined"
   const statusOf = useCallback((k) => {
-    if (cfg.overrides[k]) return cfg.overrides[k];         // 'held' | 'chased' | 'rest'
-    const n = counts[k];
-    if (n == null) return null;                            // no trades, no override
-    return n > cfg.cap ? "chased" : "held";
-  }, [cfg, counts]);
+    if (cfg.overrides[k]) return cfg.overrides[k];   // 'held' | 'chased' | 'rest'
+    const d = dayData[k];
+    if (!d) return null;                             // no trades that day
+    if (d.defined === 0) return null;               // field not present yet (worker/undated)
+    return d.allDisc ? "held" : "chased";
+  }, [cfg, dayData]);
 
   const stats = useMemo(() => {
-    const days = new Set([...Object.keys(counts), ...Object.keys(cfg.overrides)]);
+    const days = new Set([...Object.keys(dayData), ...Object.keys(cfg.overrides)]);
     const sorted = [...days].sort();
-    let held = 0, tradingDays = 0, tradeTotal = 0;
+    let held = 0, tradingDays = 0;
     sorted.forEach(k => {
       const s = statusOf(k);
       if (s === "held") { held++; tradingDays++; }
       else if (s === "chased") { tradingDays++; }
-      tradeTotal += counts[k] || 0;
     });
-    // longest run of held (rest = neutral/skip, chased = reset)
     let best = 0, run = 0;
     sorted.forEach(k => {
       const s = statusOf(k);
       if (s === "held") { run++; best = Math.max(best, run); }
       else if (s === "chased") { run = 0; }
     });
-    // current streak: walk backwards over calendar days from today
     let streak = 0; const cur = new Date();
     for (let i = 0; i < 400; i++) {
       const s = statusOf(iso(cur));
@@ -1153,14 +1159,13 @@ function OneAndDoneTracker({ trades }) {
     }
     best = Math.max(best, streak);
     const rate = tradingDays ? Math.round((held / tradingDays) * 100) : null;
-    const avg = tradingDays ? (tradeTotal / tradingDays) : 0;
-    return { streak, best, rate, held, tradingDays, avg };
-  }, [counts, cfg, statusOf]);
+    return { streak, best, rate, held, tradingDays };
+  }, [dayData, cfg, statusOf]);
 
   const monthStats = useMemo(() => {
     const y = view.getFullYear(), m = view.getMonth();
     let held = 0, logged = 0;
-    const days = new Set([...Object.keys(counts), ...Object.keys(cfg.overrides)]);
+    const days = new Set([...Object.keys(dayData), ...Object.keys(cfg.overrides)]);
     days.forEach(k => {
       const [Y, M] = k.split("-").map(Number);
       if (Y === y && M === m + 1) {
@@ -1170,7 +1175,7 @@ function OneAndDoneTracker({ trades }) {
       }
     });
     return { held, logged };
-  }, [view, counts, cfg, statusOf]);
+  }, [view, dayData, cfg, statusOf]);
 
   function cycleDay(k) {
     const order = [undefined, "held", "chased", "rest"];
@@ -1182,7 +1187,6 @@ function OneAndDoneTracker({ trades }) {
 
   const todayStatus = statusOf(todayISO);
 
-  // calendar cells
   const y = view.getFullYear(), m = view.getMonth();
   const firstDow = new Date(y, m, 1).getDay();
   const dim = new Date(y, m + 1, 0).getDate();
@@ -1191,11 +1195,13 @@ function OneAndDoneTracker({ trades }) {
   for (let d = 1; d <= dim; d++) cells.push(d);
 
   const cellCls = (s) =>
-    s === "held" ? "bg-emerald-50 border-emerald-200 text-emerald-600"
-    : s === "chased" ? "bg-red-50 border-red-200 text-red-600"
-    : s === "rest" ? "bg-slate-100 border-slate-200 text-slate-400"
+    s === "held" ? "bg-emerald-500 border-emerald-600 text-white shadow-sm"
+    : s === "chased" ? "bg-red-500 border-red-600 text-white shadow-sm"
+    : s === "rest" ? "bg-slate-200 border-slate-300 text-slate-500"
     : "bg-white border-slate-200 text-slate-300";
   const mark = (s) => s === "held" ? "✓" : s === "chased" ? "✕" : s === "rest" ? "–" : "";
+  const onColor = (s) => s === "held" || s === "chased";
+  const fmtPnl = (v) => (v >= 0 ? `+$${Math.round(v)}` : `-$${Math.round(Math.abs(v))}`);
 
   const broken = todayStatus === "chased";
 
@@ -1203,17 +1209,9 @@ function OneAndDoneTracker({ trades }) {
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-sm font-semibold">1-and-Done Tracker</h2>
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-mono text-slate-400">cap</span>
-          {[1, 2].map(n => (
-            <button key={n} onClick={() => save({ ...cfg, cap: n })}
-              className={`text-[10px] font-mono px-2 py-0.5 rounded-full border transition-colors ${cfg.cap === n ? "bg-slate-950 text-white border-slate-950" : "text-slate-400 border-slate-200 hover:border-slate-400"}`}>
-              {n}/day
-            </button>
-          ))}
-        </div>
+        <span className="text-[10px] font-mono bg-slate-50 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full">source: Notion “Disciplined”</span>
       </div>
-      <p className="text-[10px] font-mono text-slate-400 mb-4">Discipline beats P&amp;L · one A+ trade then walk away · a day over {cfg.cap} trade{cfg.cap > 1 ? "s" : ""} breaks the streak</p>
+      <p className="text-[10px] font-mono text-slate-400 mb-4">Discipline beats P&amp;L · tick <span className="text-slate-600">Disciplined</span> on a trade in Notion → the day turns green here · click a day to override manually</p>
 
       {/* stat cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
@@ -1233,9 +1231,9 @@ function OneAndDoneTracker({ trades }) {
           <div className="text-[9px] font-mono text-slate-400">{stats.held}/{stats.tradingDays} trading days</div>
         </div>
         <div className="rounded-xl border bg-slate-50 border-slate-200 px-3 py-2.5">
-          <div className="text-[9px] font-mono uppercase tracking-widest text-slate-400">Avg trades/day</div>
-          <div className={`text-xl font-bold mt-0.5 ${stats.avg > cfg.cap ? "text-red-600" : "text-emerald-600"}`}>{stats.avg.toFixed(1)}</div>
-          <div className="text-[9px] font-mono text-slate-400">target ≤ {cfg.cap}</div>
+          <div className="text-[9px] font-mono uppercase tracking-widest text-slate-400">This month</div>
+          <div className="text-xl font-bold mt-0.5 text-slate-700">{monthStats.held}/{monthStats.logged}</div>
+          <div className="text-[9px] font-mono text-slate-400">disciplined / trading days</div>
         </div>
       </div>
 
@@ -1255,26 +1253,37 @@ function OneAndDoneTracker({ trades }) {
             const k = iso(new Date(y, m, d));
             const s = statusOf(k);
             const isToday = k === todayISO;
+            const dd = dayData[k];
+            const n = dd?.count;
+            const pnlStr = n ? fmtPnl(dd.pnl) : "";
+            const oc = onColor(s);
             return (
-              <button key={i} onClick={() => cycleDay(k)} title={counts[k] ? `${counts[k]} trade${counts[k] > 1 ? "s" : ""}` : "no trades — click to log"}
-                className={`relative aspect-square rounded-md border text-[11px] font-mono flex items-center justify-center transition-colors hover:brightness-95 ${cellCls(s)} ${isToday ? "ring-1 ring-slate-900" : ""}`}>
-                <span className="absolute top-0.5 left-1 text-[7px] text-slate-400">{d}</span>
-                <span className="font-bold">{mark(s)}</span>
+              <button key={i} onClick={() => cycleDay(k)}
+                title={n ? `${n} trade${n > 1 ? "s" : ""} · ${pnlStr}` : "no trades — click to log/override"}
+                className={`relative rounded-md border min-h-[54px] p-1 font-mono flex flex-col items-center justify-center gap-0.5 transition hover:brightness-105 ${cellCls(s)} ${isToday ? "ring-2 ring-slate-900 ring-offset-1" : ""}`}>
+                <span className={`absolute top-0.5 left-1 text-[8px] ${oc ? "text-white/70" : "text-slate-400"}`}>{d}</span>
+                <span className="absolute top-0.5 right-1 text-[10px] font-bold leading-none">{mark(s)}</span>
+                {n ? (
+                  <>
+                    <span className="text-[11px] font-bold leading-none mt-1">{pnlStr}</span>
+                    <span className={`text-[8px] leading-none ${oc ? "text-white/80" : "text-slate-500"}`}>{n} trade{n > 1 ? "s" : ""}</span>
+                  </>
+                ) : null}
               </button>
             );
           })}
         </div>
         <div className="flex flex-wrap gap-3 mt-3 text-[9px] font-mono text-slate-400">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-400 inline-block" />one &amp; done</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-400 inline-block" />chased</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-slate-300 inline-block" />sat out</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" />disciplined</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block" />not disciplined</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-slate-300 inline-block" />sat out</span>
           <span className="ml-auto">click a day to override · {monthStats.held}/{monthStats.logged} held this month</span>
         </div>
       </div>
 
       <div className="rounded-xl bg-slate-50 border-l-2 border-amber-300 border border-slate-200 px-4 py-2.5 mt-3">
         <p className="text-[11px] text-slate-600 leading-relaxed">
-          <span className="font-semibold text-slate-800">A win you give back was never a win.</span> Take your one trade, then flatten &amp; close the platform — the day counts as green even if it lost.
+          <span className="font-semibold text-slate-800">A win you give back was never a win.</span> Take your one trade, then flatten &amp; close the platform — tick <span className="font-semibold">Disciplined</span> in Notion and the day turns green, even if the trade lost.
         </p>
       </div>
     </div>
