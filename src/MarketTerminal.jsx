@@ -364,15 +364,19 @@ function ScenarioCard({ item, quote, candles, evalResult, biasEntry, biasLoading
 
       <StructureLadder daily={dailyTrend} h4={h4Trend} h1={evalResult?.trend} />
 
-      <div className="flex items-center justify-between text-[10px]">
-        <span className="flex items-center gap-1.5 text-slate-500 uppercase tracking-widest">
-          <Sparkles size={11} /> AI Bias
-        </span>
-        <span className={`px-2 py-0.5 rounded-full font-bold uppercase ${BIAS_STYLES[biasValue]}`}>
-          {biasLoading && !biasEntry ? "…" : biasValue}
-        </span>
+      <div className="rounded border border-white/10 bg-black/20 px-2.5 py-2 space-y-1.5">
+        <div className="flex items-center justify-between text-[10px]">
+          <span className="flex items-center gap-1.5 text-slate-500 uppercase tracking-widest">
+            <Sparkles size={11} /> AI Bias
+          </span>
+          <span className={`px-2 py-0.5 rounded-full font-bold uppercase ${BIAS_STYLES[biasValue]}`}>
+            {biasLoading && !biasEntry ? "…" : biasValue}
+          </span>
+        </div>
+        <p className="text-[11px] text-slate-400 leading-snug">
+          {biasEntry?.reason || (biasLoading ? "Reading macro backdrop…" : "No reasoning yet — refresh the macro panel above.")}
+        </p>
       </div>
-      {biasEntry?.reason && <p className="text-[10px] text-slate-500 leading-snug -mt-1">{biasEntry.reason}</p>}
 
       <div className={`rounded border ${s.border} ${s.bg} px-2.5 py-2`}>
         <div className={`flex items-center gap-1.5 text-[11px] font-bold ${s.text}`}>
@@ -933,11 +937,14 @@ export default function MarketTerminal() {
             </div>
           </div>
 
-          <div className="space-y-6">
-            <CurrencyStrengthMeter quotes={quotes} />
-            <SituationalAwareness now={now} structure={structure} aiBias={aiBias} />
-            <AlertsPanel alerts={alerts} enabled={alertsEnabled} onToggle={toggleAlerts} />
-            <SquawkFeed squawks={squawks} loading={squawkLoading} onRefresh={generateSquawk} />
+          <div className="space-y-3">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-white/10 pb-2">Market Intel</p>
+            <div className="space-y-6">
+              <CurrencyStrengthMeter quotes={quotes} />
+              <SituationalAwareness now={now} structure={structure} aiBias={aiBias} />
+              <AlertsPanel alerts={alerts} enabled={alertsEnabled} onToggle={toggleAlerts} />
+              <SquawkFeed squawks={squawks} loading={squawkLoading} onRefresh={generateSquawk} />
+            </div>
           </div>
         </div>
       </div>
