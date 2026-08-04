@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
 import {
-  RefreshCw, CheckCircle2, XCircle, MinusCircle, Circle,
+  RefreshCw, CheckCircle2, XCircle, MinusCircle, Circle, Loader2,
   Radio, Clock, TrendingUp, TrendingDown, AlertTriangle, Sparkles, Landmark,
   Bell, BellOff, Search, X, ArrowUp, ArrowDown, Minus, StickyNote,
 } from "lucide-react";
 import { WATCHLIST, fetchQuotes, fetchQuote, fetchSeries, searchSymbols, acquireCredits, formatPrice } from "./lib/twelveData";
 import { evaluateScenario, trendOf } from "./lib/marketStructure";
 import { computeCurrencyStrength } from "./lib/currencyStrength";
+import { GRID_COLS, GRID_ROWS, WORLD_DOTS, SESSION_CITIES } from "./lib/worldMap";
 
 const WORKER_URL = "https://noisy-rain-e6aftest.indersonlatrell7.workers.dev/";
 const AI_BIAS_KEY = "myjournal_terminal_ai_bias";
@@ -15,11 +16,13 @@ const NOTES_KEY = "myjournal_terminal_notes";
 const ALERTS_ENABLED_KEY = "myjournal_terminal_alerts_enabled";
 
 // Conservative polling — Twelve Data free tier is 800 credits/day, 8/min.
+// Tuned so a full trading session (~8h, tab visible) stays well under budget:
+// quotes ~5cr/10min, 1H ~5cr/60min (matches candle close), 4H ~5cr/4h, D ~5cr/24h.
 // Requests are additionally paced through acquireCredits() (see lib/twelveData).
-const QUOTE_INTERVAL_MS = 5 * 60 * 1000;
-const SERIES_INTERVAL_MS = 30 * 60 * 1000;
-const SERIES_4H_INTERVAL_MS = 2 * 60 * 60 * 1000;
-const SERIES_DAILY_INTERVAL_MS = 12 * 60 * 60 * 1000;
+const QUOTE_INTERVAL_MS = 10 * 60 * 1000;
+const SERIES_INTERVAL_MS = 60 * 60 * 1000;
+const SERIES_4H_INTERVAL_MS = 4 * 60 * 60 * 1000;
+const SERIES_DAILY_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const SQUAWK_INTERVAL_MS = 5 * 60 * 1000;
 // Macro/geopolitical backdrop doesn't move minute to minute, so the AI bias
 // call — and the Groq usage it costs — refreshes far less often than price.
@@ -30,6 +33,7 @@ const STATUS_STYLES = {
   validated:   { text: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", icon: CheckCircle2, label: "VALIDATED" },
   invalidated: { text: "text-rose-400",    bg: "bg-rose-500/10",    border: "border-rose-500/30",    icon: XCircle,      label: "INVALIDATED" },
   pending:     { text: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/30",   icon: MinusCircle,  label: "PENDING" },
+  loading:     { text: "text-slate-500",   bg: "bg-slate-800/30",   border: "border-slate-800",      icon: Loader2,      label: "LOADING", spin: true },
   neutral:     { text: "text-slate-400",   bg: "bg-slate-500/10",   border: "border-slate-500/30",   icon: Circle,       label: "NO MACRO EDGE" },
 };
 
@@ -140,31 +144,53 @@ function buildSquawkPrompt(quotes, structure, aiBias) {
   return `You are a Bloomberg-style live market squawk reporter for a discretionary trader's terminal. Ignore any prior trade-journal instructions — this is a pure market-commentary request, not trade analysis.\n\nCurrent snapshot:\n${lines}\n\nIn under 45 words, deliver one punchy, professional squawk-box line covering the most notable move(s), momentum shift, or bias validation/invalidation. No preamble, no bullet points, no markdown — just the line, as if read live on air.`;
 }
 
+// ─── Panel shell ────────────────────────────────────────────────────────
+function Panel({ icon: Icon, iconColor = "text-amber-500", title, right, children, bodyClass = "p-4" }) {
+  return (
+    <div className="border border-white/10 bg-[#0a0d12] rounded">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/10">
+        <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300 uppercase tracking-widest">
+          <Icon size={13} className={iconColor} /> {title}
+        </div>
+        {right}
+      </div>
+      <div className={bodyClass}>{children}</div>
+    </div>
+  );
+}
+
 // ─── Ticker tape ─────────────────────────────────────────────────────────
 function TickerTape({ quotes }) {
+  const hasAnyQuote = Object.values(quotes).some((q) => q && !q.error);
   const items = WATCHLIST.map((w) => ({ ...w, q: quotes[w.symbol] }));
   const doubled = [...items, ...items];
   return (
     <div className="w-full overflow-hidden bg-black border-b border-amber-500/20 py-2">
-      <div className="ticker-track flex gap-8">
-        {doubled.map((it, i) => {
-          const q = it.q;
-          const up = q && !q.error && (q.percentChange ?? 0) >= 0;
-          return (
-            <span key={i} className="inline-flex items-center gap-2 text-[11px] px-2 whitespace-nowrap">
-              <span className="text-slate-500">{it.label}</span>
-              <span className={q && !q.error ? (up ? "text-emerald-400" : "text-rose-400") : "text-slate-600"}>
-                {q && !q.error ? formatPrice(it.group, it.symbol, q.price) : "—"}
-              </span>
-              {q && !q.error && (
-                <span className={up ? "text-emerald-500" : "text-rose-500"}>
-                  {up ? "▲" : "▼"} {Math.abs(q.percentChange ?? 0).toFixed(2)}%
+      {hasAnyQuote ? (
+        <div className="ticker-track flex gap-8 flex-nowrap">
+          {doubled.map((it, i) => {
+            const q = it.q;
+            const up = q && !q.error && (q.percentChange ?? 0) >= 0;
+            return (
+              <span key={i} className="flex-shrink-0 inline-flex items-center gap-2 text-[11px] px-2 whitespace-nowrap tabular-nums">
+                <span className="text-slate-500">{it.label}</span>
+                <span className={q && !q.error ? (up ? "text-emerald-400" : "text-rose-400") : "text-slate-600"}>
+                  {q && !q.error ? formatPrice(it.group, it.symbol, q.price) : "—"}
                 </span>
-              )}
-            </span>
-          );
-        })}
-      </div>
+                {q && !q.error && (
+                  <span className={up ? "text-emerald-500" : "text-rose-500"}>
+                    {up ? "▲" : "▼"} {Math.abs(q.percentChange ?? 0).toFixed(2)}%
+                  </span>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex items-center justify-center gap-2 text-[11px] text-slate-600">
+          <Loader2 size={11} className="animate-spin" /> Waiting for live feed…
+        </div>
+      )}
     </div>
   );
 }
@@ -179,21 +205,21 @@ function CommandBar({ query, onQueryChange, onSearch, results, onSelect, loading
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder="Quick lookup — e.g. AAPL, USD/CHF"
-          className="pl-7 pr-3 py-2 text-[11px] rounded-md bg-slate-950/60 border border-slate-800 text-slate-300 placeholder-slate-600 focus:outline-none focus:border-slate-600 w-56"
+          className="pl-7 pr-3 py-2 text-[11px] rounded bg-[#0a0d12] border border-white/10 text-slate-300 placeholder-slate-600 focus:outline-none focus:border-amber-500/40 w-56"
         />
       </form>
       {loading && (
-        <div className="absolute z-10 mt-1 w-56 rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-[11px] text-slate-500">
+        <div className="absolute z-10 mt-1 w-56 rounded border border-white/10 bg-[#0a0d12] px-3 py-2 text-[11px] text-slate-500">
           Searching…
         </div>
       )}
       {!loading && results.length > 0 && (
-        <div className="absolute z-10 mt-1 w-72 rounded-md border border-slate-800 bg-slate-950 shadow-xl overflow-hidden">
+        <div className="absolute z-10 mt-1 w-72 rounded border border-white/10 bg-[#0a0d12] shadow-xl overflow-hidden">
           {results.map((r) => (
             <button
               key={`${r.symbol}-${r.exchange}`}
               onClick={() => onSelect(r)}
-              className="w-full text-left px-3 py-2 text-[11px] hover:bg-slate-900 transition-colors border-b border-slate-900 last:border-b-0"
+              className="w-full text-left px-3 py-2 text-[11px] hover:bg-white/5 transition-colors border-b border-white/5 last:border-b-0"
             >
               <span className="text-slate-200 font-bold">{r.symbol}</span>
               <span className="text-slate-500 ml-2">{r.instrument_name}</span>
@@ -209,7 +235,7 @@ function LookupCard({ result, onDismiss }) {
   if (!result) return null;
   const { symbol, name, quote, error } = result;
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-4 py-3 flex items-center justify-between text-[11px]">
+    <div className="rounded border border-white/10 bg-[#0a0d12] px-4 py-3 flex items-center justify-between text-[11px]">
       {error ? (
         <span className="text-rose-400">{symbol}: {error}</span>
       ) : (
@@ -217,7 +243,7 @@ function LookupCard({ result, onDismiss }) {
           <p className="text-slate-100 font-bold text-sm">
             {symbol} <span className="text-slate-500 font-normal text-[11px]">{name}</span>
           </p>
-          <p className="text-slate-400 mt-0.5">
+          <p className="text-slate-400 mt-0.5 tabular-nums">
             {quote.price}{" "}
             <span className={quote.percentChange >= 0 ? "text-emerald-400" : "text-rose-400"}>
               {quote.percentChange >= 0 ? "+" : ""}{quote.percentChange.toFixed(2)}%
@@ -236,32 +262,37 @@ function LookupCard({ result, onDismiss }) {
 function MacroStrip({ macro, generatedAt, loading, onRefresh }) {
   const nextEvent = macro?.events?.[0];
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-[11px]">
-      <span className="flex items-center gap-1.5 text-slate-400 font-bold uppercase tracking-widest">
-        <Landmark size={12} /> Macro
-      </span>
-      {macro ? (
-        <>
-          <span className="text-slate-300 capitalize">{macro.sentiment || "unknown"}</span>
-          {macro.fearGreed && (
-            <span className="text-slate-500">F&amp;G {macro.fearGreed.score} · {macro.fearGreed.rating}</span>
-          )}
-          {nextEvent && (
-            <span className="text-slate-500">
-              Next: {nextEvent.name} ({nextEvent.currency}) {nextEvent.isToday ? "today" : nextEvent.date}
-            </span>
-          )}
-        </>
-      ) : (
-        <span className="text-slate-600">unavailable</span>
-      )}
-      <span className="text-slate-600 ml-auto">
-        {generatedAt ? `bias set ${new Date(generatedAt).toLocaleTimeString()}` : ""}
-      </span>
-      <button onClick={onRefresh} className="text-slate-500 hover:text-slate-300 transition-colors">
-        <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-      </button>
-    </div>
+    <Panel
+      icon={Landmark}
+      title="Macro"
+      bodyClass="px-4 py-2.5"
+      right={
+        <button onClick={onRefresh} className="text-slate-500 hover:text-slate-300 transition-colors">
+          <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+        </button>
+      }
+    >
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-[11px]">
+        {macro ? (
+          <>
+            <span className="text-slate-300 capitalize">{macro.sentiment || "unknown"}</span>
+            {macro.fearGreed && (
+              <span className="text-slate-500">F&amp;G {macro.fearGreed.score} · {macro.fearGreed.rating}</span>
+            )}
+            {nextEvent && (
+              <span className="text-slate-500">
+                Next: {nextEvent.name} ({nextEvent.currency}) {nextEvent.isToday ? "today" : nextEvent.date}
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="text-slate-600">unavailable</span>
+        )}
+        <span className="text-slate-600 ml-auto">
+          {generatedAt ? `bias set ${new Date(generatedAt).toLocaleTimeString()}` : ""}
+        </span>
+      </div>
+    </Panel>
   );
 }
 
@@ -301,18 +332,18 @@ function ScenarioCard({ item, quote, candles, evalResult, biasEntry, biasLoading
   const biasValue = biasEntry?.bias || "neutral";
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4 space-y-3">
+    <div className="border border-white/10 bg-[#0a0d12] rounded p-4 space-y-3">
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-bold text-slate-100">{item.label}</p>
           <p className="text-[10px] uppercase tracking-widest text-slate-500">{item.group}</p>
         </div>
         <div className="text-right">
-          <p className={`text-base font-bold ${quote && !quote.error ? (up ? "text-emerald-400" : "text-rose-400") : "text-slate-600"}`}>
+          <p className={`text-lg font-bold tabular-nums ${quote && !quote.error ? (up ? "text-emerald-400" : "text-rose-400") : "text-slate-600"}`}>
             {quote && !quote.error ? formatPrice(item.group, item.symbol, quote.price) : "—"}
           </p>
           {quote && !quote.error && (
-            <p className={`text-[11px] flex items-center justify-end gap-1 ${up ? "text-emerald-500" : "text-rose-500"}`}>
+            <p className={`text-[11px] flex items-center justify-end gap-1 tabular-nums ${up ? "text-emerald-500" : "text-rose-500"}`}>
               {up ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
               {(quote.percentChange ?? 0) >= 0 ? "+" : ""}{(quote.percentChange ?? 0).toFixed(2)}%
             </p>
@@ -343,9 +374,9 @@ function ScenarioCard({ item, quote, candles, evalResult, biasEntry, biasLoading
       </div>
       {biasEntry?.reason && <p className="text-[10px] text-slate-500 leading-snug -mt-1">{biasEntry.reason}</p>}
 
-      <div className={`rounded-md border ${s.border} ${s.bg} px-2.5 py-2`}>
+      <div className={`rounded border ${s.border} ${s.bg} px-2.5 py-2`}>
         <div className={`flex items-center gap-1.5 text-[11px] font-bold ${s.text}`}>
-          <Icon size={12} />
+          <Icon size={12} className={s.spin ? "animate-spin" : ""} />
           {s.label}
           {evalResult?.trend && evalResult.trend !== "insufficient" && (
             <span className="text-slate-500 font-normal normal-case ml-1">· 1H {evalResult.trend}</span>
@@ -363,7 +394,7 @@ function ScenarioCard({ item, quote, candles, evalResult, biasEntry, biasLoading
           onChange={(e) => onNoteChange(e.target.value)}
           placeholder="Your own read…"
           rows={2}
-          className="w-full bg-slate-900/60 border border-slate-800 rounded-md px-2 py-1.5 text-[11px] text-slate-300 placeholder-slate-600 resize-none focus:outline-none focus:border-slate-600"
+          className="w-full bg-black/40 border border-white/10 rounded px-2 py-1.5 text-[11px] text-slate-300 placeholder-slate-600 resize-none focus:outline-none focus:border-amber-500/40"
         />
       </div>
     </div>
@@ -376,36 +407,64 @@ function CurrencyStrengthMeter({ quotes }) {
   const maxAbs = Math.max(0.01, ...ranking.map((r) => Math.abs(r.score)));
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4 space-y-3">
-      <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-widest">
-        <TrendingUp size={13} /> Currency Strength
-      </div>
-      {ranking.length === 0 ? (
-        <p className="text-[11px] text-slate-600">Waiting for quotes…</p>
-      ) : (
-        <div className="space-y-1.5">
-          {ranking.map((r) => {
-            const positive = r.score >= 0;
-            const widthPct = Math.min(100, (Math.abs(r.score) / maxAbs) * 100);
-            return (
-              <div key={r.ccy} className="flex items-center gap-2 text-[11px]">
-                <span className="w-9 text-slate-400 font-bold">{r.ccy}</span>
-                <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full"
-                    style={{ width: `${widthPct}%`, background: positive ? "#34d399" : "#fb7185" }}
-                  />
+    <Panel icon={TrendingUp} title="Currency Strength">
+      <div className="space-y-3">
+        {ranking.length === 0 ? (
+          <p className="text-[11px] text-slate-600">Waiting for quotes…</p>
+        ) : (
+          <div className="space-y-1.5">
+            {ranking.map((r) => {
+              const positive = r.score >= 0;
+              const widthPct = Math.min(100, (Math.abs(r.score) / maxAbs) * 100);
+              return (
+                <div key={r.ccy} className="flex items-center gap-2 text-[11px]">
+                  <span className="w-9 text-slate-400 font-bold">{r.ccy}</span>
+                  <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${widthPct}%`, background: positive ? "#34d399" : "#fb7185" }}
+                    />
+                  </div>
+                  <span className={`w-14 text-right tabular-nums ${positive ? "text-emerald-400" : "text-rose-400"}`}>
+                    {positive ? "+" : ""}{r.score.toFixed(2)}%
+                  </span>
                 </div>
-                <span className={`w-14 text-right ${positive ? "text-emerald-400" : "text-rose-400"}`}>
-                  {positive ? "+" : ""}{r.score.toFixed(2)}%
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      <p className="text-[10px] text-slate-600">Derived from EUR/USD, GBP/USD, GBP/JPY — covers EUR, USD, GBP, JPY only.</p>
-    </div>
+              );
+            })}
+          </div>
+        )}
+        <p className="text-[10px] text-slate-600">Derived from EUR/USD, GBP/USD, GBP/JPY — covers EUR, USD, GBP, JPY only.</p>
+      </div>
+    </Panel>
+  );
+}
+
+// ─── World map ──────────────────────────────────────────────────────────
+function WorldMap({ utcHour }) {
+  return (
+    <svg viewBox={`0 0 ${GRID_COLS} ${GRID_ROWS}`} className="w-full h-auto block">
+      {WORLD_DOTS.map((d, i) => (
+        <circle key={i} cx={d.col + 0.5} cy={d.row + 0.5} r={0.34} className="fill-slate-700" />
+      ))}
+      {SESSIONS.map((sess) => {
+        const pos = SESSION_CITIES[sess.name];
+        if (!pos) return null;
+        const active = isSessionActive(sess, utcHour);
+        const cx = pos.col + 0.5;
+        const cy = pos.row + 0.5;
+        return (
+          <g key={sess.name}>
+            {active && (
+              <circle cx={cx} cy={cy} r={0.9} fill="#34d399" opacity={0.25}>
+                <animate attributeName="r" values="0.7;1.8;0.7" dur="2.2s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.35;0.05;0.35" dur="2.2s" repeatCount="indefinite" />
+              </circle>
+            )}
+            <circle cx={cx} cy={cy} r={0.55} fill={active ? "#34d399" : "#64748b"} stroke="#05070a" strokeWidth={0.15} />
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 
@@ -419,61 +478,63 @@ function SituationalAwareness({ now, structure, aiBias }) {
   const activeBiasCount = Object.values(aiBias?.bias || {}).filter((b) => b?.bias && b.bias !== "neutral").length;
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4 space-y-4">
-      <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-widest">
-        <Clock size={13} /> Situational Awareness
-      </div>
+    <Panel icon={Clock} title="Situational Awareness">
+      <div className="space-y-4">
+        <div className="rounded border border-white/5 bg-black/30 p-2">
+          <WorldMap utcHour={utcHour} />
+        </div>
 
-      <div className="space-y-1.5">
-        {SESSIONS.map((sess) => {
-          const active = isSessionActive(sess, utcHour);
-          return (
-            <div key={sess.name} className="flex items-center justify-between text-[11px]">
-              <span className="flex items-center gap-2">
-                <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-emerald-400 animate-pulse" : "bg-slate-700"}`} />
-                <span className={active ? "text-slate-200" : "text-slate-500"}>{sess.name}</span>
-              </span>
-              <span className={active ? "text-emerald-400" : "text-slate-600"}>{active ? "OPEN" : "closed"}</span>
-            </div>
-          );
-        })}
-      </div>
+        <div className="space-y-1.5">
+          {SESSIONS.map((sess) => {
+            const active = isSessionActive(sess, utcHour);
+            return (
+              <div key={sess.name} className="flex items-center justify-between text-[11px]">
+                <span className="flex items-center gap-2">
+                  <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-emerald-400 animate-pulse" : "bg-slate-700"}`} />
+                  <span className={active ? "text-slate-200" : "text-slate-500"}>{sess.name}</span>
+                </span>
+                <span className={active ? "text-emerald-400" : "text-slate-600"}>{active ? "OPEN" : "closed"}</span>
+              </div>
+            );
+          })}
+        </div>
 
-      <div className="pt-3 border-t border-slate-800 text-[11px] text-slate-400 space-y-1">
-        <p>UTC {now.toISOString().slice(11, 19)} · Local {now.toLocaleTimeString()}</p>
-        <p>
-          <span className="text-slate-300 font-bold">{activeBiasCount}</span> active AI bias{activeBiasCount === 1 ? "" : "es"} ·{" "}
-          <span className="text-emerald-400">{counts.validated} validated</span> ·{" "}
-          <span className="text-rose-400">{counts.invalidated} invalidated</span> ·{" "}
-          <span className="text-amber-400">{counts.pending} pending</span>
-        </p>
-        {counts.invalidated > 0 && (
-          <p className="flex items-center gap-1.5 text-rose-400 pt-1">
-            <AlertTriangle size={12} /> Structure broke against {counts.invalidated} open bias{counts.invalidated === 1 ? "" : "es"} — reassess.
+        <div className="pt-3 border-t border-white/10 text-[11px] text-slate-400 space-y-1">
+          <p className="tabular-nums">UTC {now.toISOString().slice(11, 19)} · Local {now.toLocaleTimeString()}</p>
+          <p>
+            <span className="text-slate-300 font-bold">{activeBiasCount}</span> active AI bias{activeBiasCount === 1 ? "" : "es"} ·{" "}
+            <span className="text-emerald-400">{counts.validated} validated</span> ·{" "}
+            <span className="text-rose-400">{counts.invalidated} invalidated</span> ·{" "}
+            <span className="text-amber-400">{counts.pending} pending</span>
           </p>
-        )}
+          {counts.invalidated > 0 && (
+            <p className="flex items-center gap-1.5 text-rose-400 pt-1">
+              <AlertTriangle size={12} /> Structure broke against {counts.invalidated} open bias{counts.invalidated === 1 ? "" : "es"} — reassess.
+            </p>
+          )}
+        </div>
       </div>
-    </div>
+    </Panel>
   );
 }
 
 // ─── Alerts panel ───────────────────────────────────────────────────────
 function AlertsPanel({ alerts, enabled, onToggle }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-widest">
-          <Bell size={13} className="text-amber-500" /> Alerts
-        </div>
+    <Panel
+      icon={Bell}
+      title="Alerts"
+      right={
         <button
           onClick={onToggle}
-          className={`flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-md border transition-colors ${
-            enabled ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" : "border-slate-800 text-slate-500 hover:text-slate-300"
+          className={`flex items-center gap-1.5 text-[10px] px-2 py-1 rounded border transition-colors ${
+            enabled ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" : "border-white/10 text-slate-500 hover:text-slate-300"
           }`}
         >
           {enabled ? <Bell size={11} /> : <BellOff size={11} />} {enabled ? "On" : "Off"}
         </button>
-      </div>
+      }
+    >
       <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
         {alerts.length === 0 && (
           <p className="text-[11px] text-slate-600">No alerts yet — structure flips for/against your AI bias will show up here.</p>
@@ -485,22 +546,23 @@ function AlertsPanel({ alerts, enabled, onToggle }) {
           </div>
         ))}
       </div>
-    </div>
+    </Panel>
   );
 }
 
 // ─── Squawk feed ────────────────────────────────────────────────────────
 function SquawkFeed({ squawks, loading, onRefresh }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-widest">
-          <Radio size={13} className={loading ? "animate-pulse text-amber-400" : "text-amber-500"} /> Live Market Squawk
-        </div>
+    <Panel
+      icon={Radio}
+      iconColor={loading ? "animate-pulse text-amber-400" : "text-amber-500"}
+      title="Live Market Squawk"
+      right={
         <button onClick={onRefresh} className="text-slate-500 hover:text-slate-300 transition-colors">
           <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
         </button>
-      </div>
+      }
+    >
       <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
         {squawks.length === 0 && (
           <p className="text-[11px] text-slate-600">{loading ? "Tuning in…" : "No squawk yet."}</p>
@@ -512,7 +574,7 @@ function SquawkFeed({ squawks, loading, onRefresh }) {
           </div>
         ))}
       </div>
-    </div>
+    </Panel>
   );
 }
 
@@ -817,7 +879,9 @@ export default function MarketTerminal() {
       <div className="mx-auto max-w-7xl p-4 md:p-6 space-y-6">
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-3">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.25em] text-amber-500/80 mb-1">Latrell's Terminal</p>
+            <p className="text-[10px] uppercase tracking-[0.25em] text-amber-500/80 mb-1 [text-shadow:0_0_10px_rgba(245,158,11,0.4)]">
+              Latrell's Terminal
+            </p>
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-100">Market Command Desk</h1>
             <p className="mt-1 text-[11px] text-slate-500">
               {lastQuoteAt ? `Quotes updated ${lastQuoteAt.toLocaleTimeString()}` : "Loading quotes…"}
@@ -836,7 +900,7 @@ export default function MarketTerminal() {
             />
             <button
               onClick={() => { loadQuotes(); loadSeries(); }}
-              className="flex items-center gap-2 text-[11px] px-3 py-2 rounded-md border border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700 transition-colors"
+              className="flex items-center gap-2 text-[11px] px-3 py-2 rounded border border-white/10 text-slate-400 hover:text-slate-200 hover:border-white/20 transition-colors"
             >
               <RefreshCw size={12} className={loadingQuotes ? "animate-spin" : ""} /> Refresh
             </button>
@@ -849,7 +913,7 @@ export default function MarketTerminal() {
 
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6 items-start">
           <div className="space-y-3">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Scenario Desk</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-white/10 pb-2">Scenario Desk</p>
             <div className="grid sm:grid-cols-2 gap-4">
               {WATCHLIST.map((item) => (
                 <ScenarioCard

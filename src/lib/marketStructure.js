@@ -46,7 +46,7 @@ export function classifyStructure(swings) {
 // scenario: "strengthening" | "weakening" | "neutral"
 export function evaluateScenario(scenario, candles) {
   if (!candles || candles.length < 12) {
-    return { status: "pending", trend: "insufficient", detail: "Not enough hourly data yet" };
+    return { status: "loading", trend: "insufficient", detail: "Fetching hourly candles…" };
   }
 
   const swings = findSwings(candles);
