@@ -10,6 +10,7 @@ import {
   DollarSign, Zap, AlertTriangle, Trophy, Edit2, Check,
   Globe, AlertCircle, X
 } from "lucide-react";
+import RiskGauge, { useFnStatus } from "./RiskGauge";
 
 const WORKER_URL = "https://noisy-rain-e6aftest.indersonlatrell7.workers.dev/";
 const PAYOUT_KEY = "myjournal_payout_target";
@@ -413,13 +414,20 @@ function MacroWarningBanner({ warning, onDismiss }) {
 }
 
 // ─── Payout Tracker ────────────────────────────────────────────────────────
-function PayoutTracker({ netPnl, loading }) {
+function PayoutTracker({ netPnl, loading, fnTarget }) {
   const [target, setTarget] = useState(() => {
     const saved = localStorage.getItem(PAYOUT_KEY);
     return saved ? Number(saved) : 0;
   });
   const [editing, setEditing] = useState(false);
   const [inputVal, setInputVal] = useState("");
+
+  // Adopt the live FundedNext profit target when the user hasn't set one manually.
+  useEffect(() => {
+    if (fnTarget && Number(fnTarget) > 0 && localStorage.getItem(PAYOUT_KEY) == null) {
+      setTarget(Number(fnTarget));
+    }
+  }, [fnTarget]);
 
   function saveTarget() {
     const n = parseFloat(inputVal);
@@ -1583,6 +1591,9 @@ export default function MinimalTradeJournalDashboard() {
   const [macroError, setMacroError] = useState(null);
   const [warningDismissed, setWarningDismissed] = useState(false);
 
+  // Live FundedNext account risk (from the Worker `/status` route → FN Account Status Notion DB)
+  const { status: fnStatus, loading: fnLoading } = useFnStatus(WORKER_URL);
+
   async function loadData(r, acc) {
     setLoading(true);
     setError(null);
@@ -1801,7 +1812,8 @@ export default function MinimalTradeJournalDashboard() {
               />
             </motion.div>
             <div className="flex flex-col gap-4">
-              <PayoutTracker netPnl={netPnl} loading={loading} />
+              <RiskGauge status={fnStatus} loading={fnLoading} />
+              <PayoutTracker netPnl={netPnl} loading={loading} fnTarget={fnStatus?.profitTarget} />
               <MacroPanel macro={macro} macroLoading={macroLoading} macroError={macroError} onRefresh={loadMacro} />
             </div>
           </section>
