@@ -9,6 +9,7 @@ import { WATCHLIST, fetchQuotes, fetchQuote, fetchSeries, searchSymbols, acquire
 import { evaluateScenario, trendOf } from "./lib/marketStructure";
 import { computeCurrencyStrength } from "./lib/currencyStrength";
 import { GRID_COLS, GRID_ROWS, WORLD_DOTS, SESSION_CITIES } from "./lib/worldMap";
+import { useFnStatus } from "./RiskGauge";
 
 const WORKER_URL = "https://noisy-rain-e6aftest.indersonlatrell7.workers.dev/";
 const AI_BIAS_KEY = "myjournal_terminal_ai_bias";
@@ -24,6 +25,12 @@ const SERIES_INTERVAL_MS = 60 * 60 * 1000;
 const SERIES_4H_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const SERIES_DAILY_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const SQUAWK_INTERVAL_MS = 5 * 60 * 1000;
+// A series fetch can miss its window (real per-minute contention on the
+// shared API key) and get silently caught — without a faster retry, that
+// symbol would be stuck showing "loading" for a full SERIES_INTERVAL_MS.
+// So: retry soon while any symbol is still missing data, then fall back to
+// the slow interval once every symbol has loaded at least once.
+const SERIES_RETRY_MS = 90 * 1000;
 // Macro/geopolitical backdrop doesn't move minute to minute, so the AI bias
 // call — and the Groq usage it costs — refreshes far less often than price.
 const AI_BIAS_INTERVAL_MS = 45 * 60 * 1000;
@@ -60,6 +67,23 @@ const SESSIONS = [
 function isSessionActive(session, utcHour) {
   if (session.start < session.end) return utcHour >= session.start && utcHour < session.end;
   return utcHour >= session.start || utcHour < session.end;
+}
+
+// Runs `loadFn` once immediately, then reschedules itself: quickly
+// (retryMs) while `isComplete()` is false — recovering fast from a missed
+// rate-limit window — otherwise at the slow, credit-friendly `intervalMs`
+// cadence once every symbol has loaded at least once. Returns a cleanup fn.
+function scheduleAdaptivePoll(loadFn, isComplete, intervalMs, retryMs) {
+  let cancelled = false;
+  let timer;
+  const tick = async (first) => {
+    if (cancelled) return;
+    if (first || document.visibilityState === "visible") await loadFn();
+    if (cancelled) return;
+    timer = setTimeout(() => tick(false), isComplete() ? intervalMs : retryMs);
+  };
+  tick(true);
+  return () => { cancelled = true; clearTimeout(timer); };
 }
 
 function parseJsonLoose(text) {
@@ -583,6 +607,60 @@ function SquawkFeed({ squawks, loading, onRefresh }) {
 }
 
 // ─── Main page ──────────────────────────────────────────────────────────
+// ─── FundedNext account risk (pre-trade glance) ─────────────────────────────
+function AccountRiskPanel() {
+  const { status, loading } = useFnStatus(WORKER_URL);
+
+  const money = (n, d = 2) =>
+    n === null || n === undefined || isNaN(Number(n))
+      ? "—"
+      : (Number(n) < 0 ? "-$" : "$") +
+        Math.abs(Number(n)).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  const dist = status ? Number(status.distanceToBreach) : null;
+  const alert = status ? Boolean(status.breachAlert) || (dist > 0 && dist < 500) : false;
+
+  return (
+    <Panel
+      icon={AlertTriangle}
+      iconColor={alert ? "text-red-500" : "text-amber-500"}
+      title="Account Risk"
+      right={status?.login ? <span className="text-[10px] font-mono text-slate-500">#{status.login}</span> : null}
+    >
+      {loading ? (
+        <div className="h-10 bg-white/5 rounded animate-pulse" />
+      ) : !status ? (
+        <p className="text-[11px] font-mono text-slate-500">FundedNext status offline.</p>
+      ) : (
+        <div className="space-y-3">
+          {alert && (
+            <div className="rounded bg-red-500/10 border border-red-500/30 px-3 py-1.5 text-[11px] font-mono text-red-300 flex items-center gap-2">
+              <AlertTriangle size={11} /> Close to breach — protect the account.
+            </div>
+          )}
+          <div className="flex items-end justify-between">
+            <span className={`text-2xl font-bold font-mono ${alert ? "text-red-400" : "text-slate-100"}`}>{money(dist)}</span>
+            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">buffer to breach</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+            <div className="rounded bg-white/5 border border-white/10 px-2 py-1.5">
+              <span className="text-slate-500 block">Profit target</span>
+              <span className="text-slate-200">{money(status.currentProfit, 0)} / {money(status.profitTarget, 0)}</span>
+            </div>
+            <div className="rounded bg-white/5 border border-white/10 px-2 py-1.5">
+              <span className="text-slate-500 block">Equity floor</span>
+              <span className="text-slate-200">{money(status.breachFloorEquity, 0)}</span>
+            </div>
+          </div>
+          {status.updated && (
+            <p className="text-[9px] font-mono text-slate-600">synced {new Date(status.updated).toLocaleTimeString()}</p>
+          )}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 export default function MarketTerminal() {
   const [aiBias, setAiBias] = useState(() => {
     try { return JSON.parse(localStorage.getItem(AI_BIAS_KEY)) || null; } catch { return null; }
@@ -679,29 +757,33 @@ export default function MarketTerminal() {
     return () => clearInterval(id);
   }, [loadQuotes]);
 
-  useEffect(() => {
-    loadSeries();
-    const id = setInterval(() => {
-      if (document.visibilityState === "visible") loadSeries();
-    }, SERIES_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [loadSeries]);
+  const seriesRef = useRef(series);
+  const series4hRef = useRef(series4h);
+  const seriesDailyRef = useRef(seriesDaily);
+  useEffect(() => { seriesRef.current = series; }, [series]);
+  useEffect(() => { series4hRef.current = series4h; }, [series4h]);
+  useEffect(() => { seriesDailyRef.current = seriesDaily; }, [seriesDaily]);
 
-  useEffect(() => {
-    loadSeries4h();
-    const id = setInterval(() => {
-      if (document.visibilityState === "visible") loadSeries4h();
-    }, SERIES_4H_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [loadSeries4h]);
+  useEffect(() => scheduleAdaptivePoll(
+    loadSeries,
+    () => WATCHLIST.every((w) => seriesRef.current[w.symbol]),
+    SERIES_INTERVAL_MS,
+    SERIES_RETRY_MS,
+  ), [loadSeries]);
 
-  useEffect(() => {
-    loadSeriesDaily();
-    const id = setInterval(() => {
-      if (document.visibilityState === "visible") loadSeriesDaily();
-    }, SERIES_DAILY_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [loadSeriesDaily]);
+  useEffect(() => scheduleAdaptivePoll(
+    loadSeries4h,
+    () => WATCHLIST.every((w) => series4hRef.current[w.symbol]),
+    SERIES_4H_INTERVAL_MS,
+    SERIES_RETRY_MS,
+  ), [loadSeries4h]);
+
+  useEffect(() => scheduleAdaptivePoll(
+    loadSeriesDaily,
+    () => WATCHLIST.every((w) => seriesDailyRef.current[w.symbol]),
+    SERIES_DAILY_INTERVAL_MS,
+    SERIES_RETRY_MS,
+  ), [loadSeriesDaily]);
 
   // AI-determined bias — sourced from macro sentiment/events, not price, so
   // it can be checked independently against 1H structure. Cached so a page
@@ -940,6 +1022,7 @@ export default function MarketTerminal() {
           <div className="space-y-3">
             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-white/10 pb-2">Market Intel</p>
             <div className="space-y-6">
+              <AccountRiskPanel />
               <CurrencyStrengthMeter quotes={quotes} />
               <SituationalAwareness now={now} structure={structure} aiBias={aiBias} />
               <AlertsPanel alerts={alerts} enabled={alertsEnabled} onToggle={toggleAlerts} />
