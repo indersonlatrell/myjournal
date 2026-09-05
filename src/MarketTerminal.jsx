@@ -630,7 +630,7 @@ function AccountRiskPanel() {
       {loading ? (
         <div className="h-10 bg-white/5 rounded animate-pulse" />
       ) : !status ? (
-        <p className="text-[11px] font-mono text-slate-500">FundedNext status offline.</p>
+        <p className="text-[11px] font-mono text-slate-500">Account status offline.</p>
       ) : (
         <div className="space-y-3">
           {alert && (
