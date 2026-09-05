@@ -60,7 +60,7 @@ export default function RiskGauge({ status, loading }) {
           <AlertTriangle size={14} className="text-slate-400" /> Account Risk
         </h2>
         <p className="text-[10px] font-mono text-slate-400 mt-3">
-          FundedNext status not connected yet. Add the{" "}
+          Account status not connected yet. Add the{" "}
           <span className="text-slate-600">/status</span> route to the Worker to unlock the live breach gauge.
         </p>
       </div>
@@ -82,11 +82,11 @@ export default function RiskGauge({ status, loading }) {
           Account Risk
         </h2>
         <span className="text-[10px] font-mono text-slate-400">
-          {status.login ? `#${status.login}` : "FundedNext"}
+          {status.login ? `#${status.login}` : (status.account || "Account")}
         </span>
       </div>
       <p className="text-[10px] font-mono text-slate-400 mb-4">
-        Live FundedNext challenge · {status.status || "Active"}
+        {status.account ? status.account.split(" — ")[0] : "Funded account"} · {status.status || "Active"}
       </p>
 
       {alert && (
