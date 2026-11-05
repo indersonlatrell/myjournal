@@ -1,15 +1,19 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  LineChart, Line, BarChart, Bar,
+  AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell
 } from "recharts";
 import {
-  Activity, Target, TrendingUp, Layers, RefreshCw,
-  DollarSign, Zap, AlertTriangle, Trophy, Edit2, Check,
+  RefreshCw, AlertTriangle, Trophy, Edit2, Check,
   Globe, AlertCircle, X
 } from "lucide-react";
+import { RiBookOpenLine, RiArrowDownSLine, RiArrowRightUpLine, RiCalendarLine, RiRefreshLine, RiFundsLine, RiPercentLine, RiStackLine, RiPulseLine, RiSparklingLine, RiShieldCheckLine, RiFocus3Line, RiLineChartLine, RiMindMap } from "@remixicon/react";
+import { Button } from "@/components/base/buttons/button";
+import { SegmentedControl, SegmentedControlItem } from "@/components/base/segmented-control/segmented-control";
+import { StatCards } from "@/components/application/dashboard/stat-cards";
+import { cx } from "@/utils/cx";
 import RiskGauge, { useFnStatus } from "./RiskGauge";
 
 const WORKER_URL = "https://noisy-rain-e6aftest.indersonlatrell7.workers.dev/";
@@ -229,36 +233,27 @@ async function fetchMacroIntel() {
 
 // ─── Macro Panel ───────────────────────────────────────────────────────────
 // ─── Collapsible Section ───────────────────────────────────────────────────
-function Section({ id, title, subtitle, icon, children, openSections, toggleSection }) {
+function Section({ id, title, subtitle, children, openSections, toggleSection }) {
   const isOpen = openSections[id] !== false;
+  const SectionIcon = { performance: RiLineChartLine, setups: RiFocus3Line, psychology: RiMindMap, ai: RiSparklingLine }[id];
   return (
-    <div className="space-y-4">
-      <button
-        onClick={() => toggleSection(id)}
-        className="w-full flex items-center justify-between group"
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-lg">{icon}</span>
-          <div className="text-left">
-            <p className="text-sm font-bold tracking-tight text-slate-900 group-hover:text-slate-700 transition-colors">{title}</p>
-            {subtitle && <p className="text-[10px] font-mono text-slate-400">{subtitle}</p>}
-          </div>
-        </div>
-        <div className={`w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center text-slate-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}>
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-            <path d="M2 4l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </div>
-      </button>
-      {isOpen && <div className="space-y-4">{children}</div>}
-    </div>
+    <section id={id} className="dashboard-section space-y-4" aria-labelledby={`${id}-title`}>
+      <Button variant="ghost" onClick={() => toggleSection(id)} aria-expanded={isOpen} aria-controls={`${id}-content`} className="section-toggle">
+        <span className="section-heading"><span className="section-icon"><SectionIcon size={18} /></span><span><span id={`${id}-title`} className="text-headline-medium block">{title}</span><span className="text-body-2-regular section-subtitle">{subtitle}</span></span></span>
+        <RiArrowDownSLine size={20} className={cx("section-chevron", isOpen && "is-open")} />
+      </Button>
+      {isOpen && <div id={`${id}-content`} className="space-y-4">{children}</div>}
+    </section>
   );
 }
 
 // ─── Inline AI Insight ─────────────────────────────────────────────────────
 function InlineInsight({ prompt, trades, stats, color = "blue" }) {
-  const [insight, setInsight] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const request = JSON.stringify({ question: prompt, trades, stats });
+  const hasTrades = Boolean(trades?.length);
+  const loading = hasTrades && result?.request !== request;
+  const insight = hasTrades && result?.request === request ? result.insight : null;
 
   const colors = {
     blue:    { bg: "bg-blue-50",    border: "border-blue-200",    text: "text-blue-700",    dot: "bg-blue-400"    },
@@ -268,20 +263,21 @@ function InlineInsight({ prompt, trades, stats, color = "blue" }) {
   const c = colors[color] || colors.blue;
 
   useEffect(() => {
-    if (!trades || trades.length === 0) return;
-    let cancelled = false;
-    setLoading(true);
+    if (!hasTrades) return;
+    const controller = new AbortController();
     fetch(WORKER_URL + "chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: prompt, trades, stats }),
+      body: request,
+      signal: controller.signal,
     })
       .then(r => r.json())
-      .then(json => { if (!cancelled && json.success) setInsight(json.reply); })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [trades?.length]);
+      .then(json => {
+        if (!controller.signal.aborted) setResult({ request, insight: json.success ? json.reply : null });
+      })
+      .catch(() => { if (!controller.signal.aborted) setResult({ request, insight: null }); });
+    return () => controller.abort();
+  }, [request, hasTrades]);
 
   if (loading) return (
     <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
@@ -306,10 +302,9 @@ function MacroPanel({ macro, macroLoading, macroError, onRefresh }) {
     "neutral":  { bg: "bg-slate-50",   border: "border-slate-200",   text: "text-slate-600",   dot: "bg-slate-400"   },
   };
   const sc = sentimentColors[macro?.sentiment] || sentimentColors.neutral;
-  const impactColors = { high: "bg-red-100 text-red-700", medium: "bg-amber-100 text-amber-700" };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+    <div className="glass-panel p-5">
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-sm font-semibold flex items-center gap-1.5">
           <Globe size={14} className="text-blue-500" />
@@ -415,19 +410,14 @@ function MacroWarningBanner({ warning, onDismiss }) {
 
 // ─── Payout Tracker ────────────────────────────────────────────────────────
 function PayoutTracker({ netPnl, loading, fnTarget }) {
-  const [target, setTarget] = useState(() => {
+  const [manualTarget, setTarget] = useState(() => {
     const saved = localStorage.getItem(PAYOUT_KEY);
-    return saved ? Number(saved) : 0;
+    return saved ? Number(saved) : null;
   });
+  const target = manualTarget ?? (Number(fnTarget) > 0 ? Number(fnTarget) : 0);
   const [editing, setEditing] = useState(false);
   const [inputVal, setInputVal] = useState("");
 
-  // Adopt the live FundedNext profit target when the user hasn't set one manually.
-  useEffect(() => {
-    if (fnTarget && Number(fnTarget) > 0 && localStorage.getItem(PAYOUT_KEY) == null) {
-      setTarget(Number(fnTarget));
-    }
-  }, [fnTarget]);
 
   function saveTarget() {
     const n = parseFloat(inputVal);
@@ -443,7 +433,7 @@ function PayoutTracker({ netPnl, loading, fnTarget }) {
   const achieved = netPnl >= target && target > 0;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+    <div className="glass-panel p-5">
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-sm font-semibold flex items-center gap-1.5">
           <Trophy size={14} className="text-amber-500" />
@@ -455,17 +445,17 @@ function PayoutTracker({ netPnl, loading, fnTarget }) {
           {target > 0 ? "Edit target" : "Set target"}
         </button>
       </div>
-      <p className="text-[10px] font-mono text-slate-400 mb-4">Funded account payout goal</p>
+      <p className="text-[10px] font-mono text-slate-400 mb-4">Your next trading milestone</p>
 
       {editing ? (
         <div className="flex items-center gap-2 mb-4">
           <span className="text-sm font-mono text-slate-500">$</span>
-          <input autoFocus type="number" value={inputVal}
+          <input aria-label="Payout target in dollars" autoFocus type="number" value={inputVal}
             onChange={e => setInputVal(e.target.value)}
             onKeyDown={e => e.key === "Enter" && saveTarget()}
             placeholder="e.g. 1000"
             className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-slate-400" />
-          <button onClick={saveTarget} className="bg-slate-950 text-white rounded-lg px-3 py-2">
+          <button aria-label="Save payout target" onClick={saveTarget} className="bg-slate-950 text-white rounded-lg px-3 py-2">
             <Check size={14} />
           </button>
         </div>
@@ -511,20 +501,20 @@ const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 function WeeklyCalendar({ trades, loading }) {
   const weeks = useMemo(() => buildWeeklyGrid(trades || []), [trades]);
   if (loading) return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+    <div className="glass-panel p-5">
       <h2 className="text-sm font-semibold mb-1">Weekly Summary</h2>
       <p className="text-[10px] font-mono text-slate-400 mb-4">Performance by week</p>
       <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-14 bg-slate-50 rounded-xl animate-pulse" />)}</div>
     </div>
   );
   if (!weeks.length) return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+    <div className="glass-panel p-5">
       <h2 className="text-sm font-semibold mb-1">Weekly Summary</h2>
       <p className="text-[10px] font-mono text-slate-400">No data for this range.</p>
     </div>
   );
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+    <div className="glass-panel p-5">
       <h2 className="text-sm font-semibold mb-1">Weekly Summary</h2>
       <p className="text-[10px] font-mono text-slate-400 mb-4">Each cell = R for that day · green = profit · red = loss · grey = no trades</p>
       <div className="overflow-x-auto">
@@ -570,30 +560,6 @@ function WeeklyCalendar({ trades, loading }) {
 }
 
 // ─── Metric Card ───────────────────────────────────────────────────────────
-function MetricCard({ label, value, sub, positive, icon: Icon, loading, warning }) {
-  return (
-    <div className={`relative overflow-hidden rounded-2xl bg-white border shadow-sm p-5
-      ${warning ? "border-red-300" : positive === true ? "border-emerald-200" : positive === false ? "border-red-200" : "border-slate-200"}`}>
-      <div className={`absolute top-0 left-0 right-0 h-0.5
-        ${warning ? "bg-red-500" : positive === true ? "bg-emerald-400" : positive === false ? "bg-red-400" : "bg-slate-200"}`} />
-      <div className="flex items-start justify-between mb-3">
-        <p className="text-xs font-mono uppercase tracking-widest text-slate-400">{label}</p>
-        <div className={`rounded-lg p-1.5 ${warning ? "bg-red-50 text-red-500" : "bg-slate-100 text-slate-500"}`}><Icon size={14} /></div>
-      </div>
-      {loading ? <div className="h-7 w-3/4 bg-slate-100 rounded animate-pulse" /> : (
-        <p className={`text-2xl font-bold tracking-tight font-mono
-          ${warning ? "text-red-500" : positive === true ? "text-emerald-600" : positive === false ? "text-red-500" : "text-slate-900"}`}>{value}</p>
-      )}
-      <p className="mt-2 text-xs text-slate-400 font-mono">{sub}</p>
-      {warning && (
-        <div className="mt-2 flex items-center gap-1 text-[10px] font-mono text-red-500">
-          <AlertTriangle size={10} />{warning}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function InsightCard({ insight }) {
   const style = INSIGHT_STYLES[insight.type] || INSIGHT_STYLES.review;
   return (
@@ -691,7 +657,7 @@ function DayAnalysisPanel({ trades, loading }) {
   ];
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+    <div className="glass-panel p-5">
       <h2 className="text-sm font-semibold mb-1">Day Analysis</h2>
       <p className="text-[10px] font-mono text-slate-400 mb-4">Green vs Red day performance</p>
       {loading ? (
@@ -752,7 +718,7 @@ function ConfluencePanel({ trades, loading }) {
   const confluences = buildConfluenceStats(trades || []);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+    <div className="glass-panel p-5">
       <h2 className="text-sm font-semibold mb-1">Confluence Breakdown</h2>
       <p className="text-[10px] font-mono text-slate-400 mb-4">Which confluences correlate with wins</p>
       {loading ? (
@@ -796,7 +762,7 @@ function MistakesPanel({ trades, loading }) {
   const mistakes = buildMistakes(trades || []);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+    <div className="glass-panel p-5">
       <h2 className="text-sm font-semibold mb-1">Mistakes Review</h2>
       <p className="text-[10px] font-mono text-slate-400 mb-4">Your recent journal notes on execution errors</p>
       {loading ? (
@@ -848,7 +814,7 @@ function TradeQualityPanel({ trades, loading }) {
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+    <div className="glass-panel p-5">
       <h2 className="text-sm font-semibold mb-1">Trade Quality Score</h2>
       <p className="text-[10px] font-mono text-slate-400 mb-4">
         Based on your GOOD / BAD tags in Notion
@@ -916,10 +882,7 @@ function TradeQualityPanel({ trades, loading }) {
 }
 
 // ─── Monthly P&L Chart ─────────────────────────────────────────────────────
-function MonthlyPnlChart({ trades, loading }) {
-  const months = buildMonthlyPnl(trades || []);
-
-  function MonthTooltip({ active, payload, label }) {
+function MonthTooltip({ active, payload, label }) {
     if (!active || !payload?.length) return null;
     const val = payload[0].value;
     return (
@@ -930,8 +893,12 @@ function MonthlyPnlChart({ trades, loading }) {
     );
   }
 
+function MonthlyPnlChart({ trades, loading }) {
+  const months = buildMonthlyPnl(trades || []);
+
+
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+    <div className="glass-panel p-5">
       <h2 className="text-sm font-semibold mb-1">Monthly P&L</h2>
       <p className="text-[10px] font-mono text-slate-400 mb-4">Net dollar profit per month</p>
 
@@ -942,7 +909,7 @@ function MonthlyPnlChart({ trades, loading }) {
       ) : (
         <>
           <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 320, height: 224 }}>
               <BarChart data={months} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="label" tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
@@ -976,7 +943,7 @@ function MonthlyPnlChart({ trades, loading }) {
 
 
 // ─── Trading Rules Panel ────────────────────────────────────────────────────
-function RulesPanel({ trades }) {
+function RulesPanel() {
   const [rules, setRules] = useState(() => {
     try { return JSON.parse(localStorage.getItem(RULES_KEY) || "[]"); }
     catch { return []; }
@@ -1025,7 +992,7 @@ function RulesPanel({ trades }) {
   const totalViolations = rules.reduce((s, r) => s + r.violations, 0);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+    <div className="glass-panel p-5">
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-sm font-semibold">My Trading Rules</h2>
         {totalViolations > 0 && (
@@ -1039,6 +1006,7 @@ function RulesPanel({ trades }) {
       {/* Add rule */}
       <div className="flex gap-2 mb-4">
         <input
+          aria-label="New trading rule"
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === "Enter" && addRule()}
@@ -1132,7 +1100,6 @@ function OneAndDoneTracker({ trades }) {
     });
     return m;
   }, [trades]);
-  const counts = dayData;
 
   // status per day: manual override wins, else derived from Notion "Disciplined"
   const statusOf = useCallback((k) => {
@@ -1214,7 +1181,7 @@ function OneAndDoneTracker({ trades }) {
   const broken = todayStatus === "chased";
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+    <div className="glass-panel p-5">
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-sm font-semibold">1-and-Done Tracker</h2>
         <span className="text-[10px] font-mono bg-slate-50 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full">source: Notion “Disciplined”</span>
@@ -1340,7 +1307,7 @@ function GoalTracker({ data, loading }) {
   const monthLabel = now.toLocaleDateString("en-GB", { month: "long" });
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+    <div className="glass-panel p-5">
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-sm font-semibold">Goal Tracker</h2>
         <button onClick={startEdit}
@@ -1434,14 +1401,14 @@ function GoalTracker({ data, loading }) {
 // ─── Journal AI Chat ────────────────────────────────────────────────────────
 function JournalAI({ data }) {
   const [messages, setMessages] = useState([
-    { role: "assistant", text: "Ask me anything about your trades. Powered by Groq AI. Try: \"What\'s my best setup?\" or \"When do I perform best?\"" }
+    { role: "assistant", text: "Ask me anything about your trades. Powered by Groq AI. Try: \"What's my best setup?\" or \"When do I perform best?\"" }
   ]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const bottomRef = React.useRef(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messages.length > 1) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [messages, thinking]);
 
   async function ask() {
@@ -1487,7 +1454,7 @@ function JournalAI({ data }) {
   ];
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col" style={{ minHeight: "420px" }}>
+    <div className="glass-panel p-5 flex flex-col" style={{ minHeight: "420px" }}>
       <h2 className="text-sm font-semibold mb-1">Journal AI</h2>
       <p className="text-[10px] font-mono text-slate-400 mb-4">Ask questions about your own trade data</p>
 
@@ -1532,6 +1499,7 @@ function JournalAI({ data }) {
       {/* Input */}
       <div className="flex gap-2">
         <input
+          aria-label="Question about your trades"
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === "Enter" && ask()}
@@ -1550,21 +1518,16 @@ function JournalAI({ data }) {
 
 function AccountToggle({ account, onChange }) {
   return (
-    <div className="flex rounded-xl overflow-hidden border border-slate-200 bg-white">
-      {ACCOUNTS.map((a) => (
-        <button key={a.value} onClick={() => onChange(a.value)}
-          className={`px-4 py-2 text-xs font-mono border-r border-slate-200 last:border-r-0 transition-colors duration-150 flex items-center gap-1.5
-            ${account === a.value ? (a.value === "funded" ? "bg-amber-500 text-white border-amber-500" : "bg-slate-950 text-white") : "text-slate-500 hover:bg-slate-50"}`}>
-          {a.value === "funded" && <span className={`w-1.5 h-1.5 rounded-full ${account === "funded" ? "bg-white" : "bg-amber-400"}`} />}
-          {a.label}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl aria-label="Trading account" selectedKeys={new Set([account])} onSelectionChange={(keys) => onChange([...keys][0])}>
+      {ACCOUNTS.map((a) => <SegmentedControlItem key={a.value} id={a.value}>{a.label}</SegmentedControlItem>)}
+    </SegmentedControl>
   );
 }
 
 // ─── Main Dashboard ────────────────────────────────────────────────────────
-export default function MinimalTradeJournalDashboard() {
+export default function MinimalTradeJournalDashboard({ navigationRequest }) {
+  const requestId = useRef(0);
+  const [lastUpdated, setLastUpdated] = useState(null);
   const [range, setRange] = useState("30d");
   const [account, setAccount] = useState("other");
   const [data, setData] = useState(null);
@@ -1585,6 +1548,22 @@ export default function MinimalTradeJournalDashboard() {
     });
   }
 
+  useEffect(() => {
+    if (!navigationRequest) return;
+    const id = navigationRequest.id;
+    if (id !== "overview") {
+      // Expand the section requested by the separate workspace navigation.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOpenSections(prev => ({ ...prev, [id]: true }));
+    }
+    const frame = requestAnimationFrame(() => {
+      const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth";
+      if (id === "overview") window.scrollTo({ top: 0, behavior });
+      else document.getElementById(id)?.scrollIntoView({ behavior, block: "start" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [navigationRequest]);
+
   // Macro state
   const [macro, setMacro] = useState(null);
   const [macroLoading, setMacroLoading] = useState(true);
@@ -1595,17 +1574,22 @@ export default function MinimalTradeJournalDashboard() {
   const { status: fnStatus, loading: fnLoading } = useFnStatus(WORKER_URL);
 
   async function loadData(r, acc) {
+    const id = ++requestId.current;
     setLoading(true);
+    setData(null);
     setError(null);
     try {
       const res = await fetch(`${WORKER_URL}?range=${r}&account=${acc}`);
+      if (!res.ok) throw new Error(`Unable to sync trades (${res.status}). Try refreshing.`);
       const json = await res.json();
       if (!json.success) throw new Error(json.message || "Worker returned success: false");
+      if (id !== requestId.current) return;
       setData(json);
+      setLastUpdated(new Date());
     } catch (err) {
-      setError(err.message || "Failed to reach Cloudflare Worker.");
+      if (id === requestId.current) setError(err.message || "Unable to sync trades. Try refreshing.");
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }
 
@@ -1623,8 +1607,8 @@ export default function MinimalTradeJournalDashboard() {
     }
   }, []);
 
-  useEffect(() => { loadData(range, account); }, [range, account]);
-  useEffect(() => { loadMacro(); }, []);
+  useEffect(() => { loadData(range, account); return () => { requestId.current++; }; }, [range, account]);
+  useEffect(() => { loadMacro(); }, [loadMacro]);
 
   const equityCurve = useMemo(() => (data?.trades ? buildEquityCurve(data.trades) : []), [data]);
   const streak = useMemo(() => calcStreak(data?.trades || []), [data]);
@@ -1634,55 +1618,26 @@ export default function MinimalTradeJournalDashboard() {
   }, [data]);
 
   const rangeLabel = { "7d": "last 7 days", "30d": "last 30 days", "90d": "last 90 days", "ytd": "year to date" }[range];
-  const qualityStats = useMemo(() => buildQualityStats(data?.trades || []), [data]);
-  const monthlyData = useMemo(() => buildMonthlyPnl(data?.trades || []), [data]);
-  const dayStats = useMemo(() => buildDayStats(data?.trades || []), [data]);
-  const confluenceStats = useMemo(() => buildConfluenceStats(data?.trades || []), [data]);
-  const mistakesList = useMemo(() => buildMistakes(data?.trades || []), [data]);
   const isFunded = account === "funded";
   const lossStreakWarning = streak.type === "loss" && streak.current >= 2
     ? `${streak.current} losses in a row — consider stepping back` : null;
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-950">
-      <div className="mx-auto max-w-7xl space-y-6">
-
-        {/* Header */}
-        <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <main id="overview" className="journal-dashboard">
+      <div className="dashboard-content space-y-6">
+        <header className="dashboard-header">
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400 mb-1">Latrell's Trade Journal</p>
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Trading Performance</h1>
-            <div className="mt-2 flex items-center gap-2">
-              <span className={`inline-flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1 rounded-full border
-                ${isFunded ? "bg-amber-50 border-amber-200 text-amber-700" : "bg-slate-100 border-slate-200 text-slate-500"}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${isFunded ? "bg-amber-400" : "bg-slate-400"}`} />
-                {isFunded ? "Funded account" : "Other / personal"}
-              </span>
-            </div>
-            <p className="mt-1.5 text-xs font-mono text-slate-400">
-              {loading ? "Fetching live data from Notion…" : error ? "Connection error — check console"
-                : `${data?.count ?? 0} trades · ${rangeLabel} · updated just now`}
-            </p>
+            <div className="page-kicker text-body-2-medium"><span className="live-indicator" /> YOUR TRADING WORKSPACE</div>
+            <h1 className="text-display-3-medium">Trading Performance<span className="heading-dot">.</span></h1>
+            <p className="text-body-regular text-text-secondary">A clear view of your edge. Every trade, every decision.</p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live · Notion
-            </div>
-            <AccountToggle account={account} onChange={setAccount} />
-            <div className="flex rounded-xl overflow-hidden border border-slate-200 bg-white">
-              {RANGES.map((r) => (
-                <button key={r.value} onClick={() => setRange(r.value)}
-                  className={`px-4 py-2 text-xs font-mono border-r border-slate-200 last:border-r-0 transition-colors duration-150
-                    ${range === r.value ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-50"}`}>{r.label}</button>
-              ))}
-            </div>
-            <button onClick={() => loadData(range, account)}
-              className="p-2 rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition-colors">
-              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-            </button>
-          </div>
+          <div className="header-context"><span className="account-badge"><RiShieldCheckLine size={15} />{isFunded ? "Funded account" : "Personal account"}</span><span className="text-body-2-regular text-text-secondary">{data ? `${data.count} trades in this period` : loading ? "Syncing your journal…" : "Awaiting trade data"}</span></div>
         </header>
+        <div className="dashboard-toolbar glass-panel">
+          <div className="toolbar-group"><span className="toolbar-label text-body-2-medium">Account</span><AccountToggle account={account} onChange={setAccount} /></div>
+          <div className="toolbar-group range-group"><RiCalendarLine size={17} className="text-foreground-icon-secondary" /><SegmentedControl aria-label="Date range" selectedKeys={new Set([range])} onSelectionChange={(keys) => setRange([...keys][0])}>{RANGES.map(r => <SegmentedControlItem key={r.value} id={r.value}>{r.label}</SegmentedControlItem>)}</SegmentedControl></div>
+          <div className="toolbar-sync"><span className={cx("sync-status text-body-2-regular", error && "sync-error")} role="status"><span />{loading ? "Syncing…" : error ? "Sync unavailable" : `Synced ${lastUpdated?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) || ""}`}</span><Button variant="secondary" iconOnly leadingIcon={RiRefreshLine} aria-label="Refresh trade data" title="Refresh trade data" disabled={loading} onClick={() => loadData(range, account)} className={cx(loading && "refresh-loading")} /></div>
+        </div>
 
         {/* Macro warning banner */}
         {!warningDismissed && macro?.todayWarning && (
@@ -1693,100 +1648,31 @@ export default function MinimalTradeJournalDashboard() {
           <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-xs font-mono text-red-700">{error}</div>
         )}
 
-        {/* Metric cards row 1 */}
-        <section className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-          <MetricCard label="Net R" value={data ? signedR(data.totalR) : "—"}
-            sub={data ? `${data.count} trades loaded` : "Loading…"}
-            positive={data ? data.totalR >= 0 : undefined} icon={Activity} loading={loading} />
-          <MetricCard label="Win Rate" value={data ? `${data.winRate}%` : "—"}
-            sub={data ? `${data.wins}W / ${data.losses}L` : "Loading…"}
-            positive={data ? data.winRate >= 50 : undefined} icon={Target} loading={loading} />
-          <MetricCard label="Net P&L" value={data ? signedUSD(netPnl) : "—"}
-            sub={data ? `${data.count} trades · ${rangeLabel}` : "Loading…"}
-            positive={data ? netPnl >= 0 : undefined} icon={DollarSign} loading={loading} />
-          <MetricCard label="Best Setup" value={data?.bestSetup ? data.bestSetup.setup : "—"}
-            sub={data?.bestSetup ? `${signedR(data.bestSetup.totalR)} · ${data.bestSetup.winRate}% WR` : "Loading…"}
-            positive={data?.bestSetup ? data.bestSetup.totalR >= 0 : undefined} icon={Layers} loading={loading} />
-        </section>
-
-        {/* Metric cards row 2 */}
-        <section className="grid grid-cols-2 xl:grid-cols-3 gap-3">
-          <MetricCard label="Current Streak"
-            value={!data ? "—" : streak.type === "win" ? `W${streak.current}` : streak.type === "loss" ? `L${streak.current}` : "—"}
-            sub={streak.type === "win" ? "Keep following your rules" : streak.type === "loss" ? "Review last trades before continuing" : "No trades yet"}
-            positive={streak.type === "win" ? true : streak.type === "loss" ? false : undefined}
-            icon={streak.type === "loss" && streak.current >= 2 ? AlertTriangle : Zap}
-            loading={loading} warning={lossStreakWarning} />
-          <MetricCard label="Longest Win Streak" value={data ? `W${streak.longest}` : "—"}
-            sub="Best consecutive wins in range"
-            positive={streak.longest > 0 ? true : undefined} icon={TrendingUp} loading={loading} />
-          <MetricCard label="Avg R Multiple" value={data ? signedR(data.avgR) : "—"}
-            sub="Per completed trade"
-            positive={data ? data.avgR >= 0 : undefined} icon={TrendingUp} loading={loading} />
-        </section>
-
-        {/* ── Next Best Action — moved up, full prominence ── */}
-        <div className="bg-white rounded-2xl border-2 border-slate-900 shadow-sm p-5">
-          <div className="flex items-center justify-between mb-1">
-            <h2 className="text-sm font-bold tracking-tight">Next Best Action</h2>
-            <span className="text-[10px] font-mono text-slate-400">{data ? `${data.count} trades · ${rangeLabel}` : "loading…"}</span>
-          </div>
-          {loading ? (
-            <div className="flex gap-3">{[1,2,3].map(i => <div key={i} className="h-14 flex-1 bg-slate-50 rounded-xl animate-pulse" />)}</div>
-          ) : data?.insights?.length ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {data.insights.map((ins, i) => <InsightCard key={i} insight={ins} />)}
-            </div>
-          ) : (
-            <p className="text-xs font-mono text-slate-400">Add notes to your Notion trades to unlock behavior pattern detection.</p>
-          )}
+        <div aria-busy={loading} aria-label="Trading summary">
+          {loading ? <div className="metric-skeleton-grid">{[1, 2, 3, 4].map(i => <div key={i} className="glass-panel metric-skeleton"><span /><span /><span /></div>)}</div> : <StatCards className="journal-stats" stats={[
+            { icon: RiFundsLine, label: "Net P&L", value: data ? signedUSD(netPnl) : "N/A", valueTone: netPnl < 0 ? "negative" : "positive", delta: data ? `${data.count} trades` : "No data", deltaColor: netPnl < 0 ? "rose" : "neutral" },
+            { icon: RiPulseLine, label: "Net R", value: data ? signedR(data.totalR) : "N/A", delta: "Risk-adjusted", deltaColor: "neutral" },
+            { icon: RiPercentLine, label: "Win Rate", value: data ? `${data.winRate}%` : "N/A", delta: data ? `${data.wins}W / ${data.losses}L` : "No data", deltaColor: "neutral" },
+            { icon: RiStackLine, label: "Best Setup", value: data?.bestSetup?.setup || "No trades", delta: data?.bestSetup ? `${data.bestSetup.winRate}% win rate` : "This period", deltaColor: "neutral" },
+          ]} />}
         </div>
 
-        {/* divider */}
-        <div className="border-t border-slate-200" />
-
         {/* ── SECTION 1: Performance ── */}
-        <Section id="performance" title="Performance" subtitle="Equity, streaks, weekly summary, monthly P&L" icon="📈" openSections={openSections} toggleSection={toggleSection}>
-          <section className="grid gap-4 xl:grid-cols-3">
+        <Section id="performance" title="Performance" subtitle="Your results, at a glance" icon="📈" openSections={openSections} toggleSection={toggleSection}>
+          <section className="performance-grid">
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
-              className="xl:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-              <div className="flex items-center justify-between mb-1">
-                <h2 className="text-sm font-semibold">Equity Curve</h2>
-                <div className="flex items-center gap-2">
-                  {/* R / $ toggle */}
-                  <div className="flex rounded-lg overflow-hidden border border-slate-200">
-                    <button
-                      onClick={() => setCurveMode("r")}
-                      className={`px-3 py-1 text-[11px] font-mono transition-colors border-r border-slate-200
-                        ${curveMode === "r" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
-                      R
-                    </button>
-                    <button
-                      onClick={() => setCurveMode("pnl")}
-                      className={`px-3 py-1 text-[11px] font-mono transition-colors
-                        ${curveMode === "pnl" ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
-                      $
-                    </button>
-                  </div>
-                  {data && (
-                    <span className={`text-[10px] font-mono px-2 py-1 rounded-full
-                      ${(curveMode === "r" ? data.totalR : netPnl) >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
-                      {curveMode === "r" ? signedR(data.totalR) : signedUSD(netPnl)} total
-                    </span>
-                  )}
-                </div>
-              </div>
-              <p className="text-[10px] font-mono text-slate-400 mb-4">
-                {curveMode === "r" ? "Cumulative R — tracks growth and drawdown" : "Cumulative P&L in dollars"}
-              </p>
+              className="glass-panel equity-panel">
+              <div className="equity-heading"><div><h2 className="text-headline-medium">Equity Curve</h2><p className="text-body-2-regular text-text-secondary">Cumulative performance over the {rangeLabel}</p></div><SegmentedControl aria-label="Equity chart unit" selectedKeys={new Set([curveMode])} onSelectionChange={(keys) => setCurveMode([...keys][0])}><SegmentedControlItem id="r">R multiple</SegmentedControlItem><SegmentedControlItem id="pnl">USD</SegmentedControlItem></SegmentedControl></div>
+              <div className="equity-total"><span className="text-display-3-medium">{loading ? "Loading…" : data ? (curveMode === "r" ? signedR(data.totalR) : signedUSD(netPnl)) : "N/A"}</span><span className="text-body-2-regular text-text-secondary">{curveMode === "r" ? "net return" : "net profit"}</span></div>
               {loading ? <div className="h-72 bg-slate-50 rounded-xl animate-pulse" /> :
                 equityCurve.length === 0 ? (
                   <div className="h-72 flex items-center justify-center text-xs font-mono text-slate-400">No trade data for this range.</div>
                 ) : (
                   <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={equityCurve} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 320, height: 224 }}>
+                      <AreaChart data={equityCurve} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                        <defs><linearGradient id="equity-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--journal-accent)" stopOpacity={0.2} /><stop offset="100%" stopColor="var(--journal-accent)" stopOpacity={0} /></linearGradient></defs>
+                        <CartesianGrid vertical={false} strokeDasharray="4 5" stroke="var(--color-separator-border)" />
                         <XAxis dataKey="label" tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
                         <YAxis
                           tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }}
@@ -1795,13 +1681,13 @@ export default function MinimalTradeJournalDashboard() {
                           width={48}
                         />
                         <Tooltip content={curveMode === "r" ? EquityTooltip : PnlTooltip} />
-                        <Line type="monotone"
+                        <Area type="monotone" fill="url(#equity-fill)"
                           dataKey={curveMode === "r" ? "equity" : "pnl"}
-                          stroke={isFunded ? "#f59e0b" : ((curveMode === "r" ? data?.totalR : netPnl) >= 0 ? "#16a34a" : "#dc2626")}
+                          stroke={(curveMode === "r" ? data?.totalR : netPnl) >= 0 ? "var(--journal-accent)" : "var(--color-text-error-primary)"}
                           strokeWidth={2.5}
-                          dot={equityCurve.length > 30 ? false : { r: 3, strokeWidth: 0, fill: isFunded ? "#f59e0b" : "#16a34a" }}
+                          dot={false}
                           activeDot={{ r: 4, strokeWidth: 0 }} />
-                      </LineChart>
+                      </AreaChart>
                     </ResponsiveContainer>
                   </div>
                 )}
@@ -1811,12 +1697,17 @@ export default function MinimalTradeJournalDashboard() {
                 color="blue"
               />
             </motion.div>
-            <div className="flex flex-col gap-4">
-              <RiskGauge status={fnStatus} loading={fnLoading} />
-              <PayoutTracker netPnl={netPnl} loading={loading} fnTarget={fnStatus?.profitTarget} />
-              <MacroPanel macro={macro} macroLoading={macroLoading} macroError={macroError} onRefresh={loadMacro} />
+            <div className="performance-sidebar">
+              <PayoutTracker netPnl={netPnl} loading={loading} fnTarget={isFunded ? fnStatus?.profitTarget : null} />
+              {isFunded ? <RiskGauge status={fnStatus} loading={fnLoading} /> : <div className="glass-panel discipline-panel"><span className="discipline-icon"><RiFocus3Line size={22} /></span><h2 className="text-headline-medium">Process over outcome.</h2><p className="text-body-regular text-text-secondary">Review your execution, follow your rules, and let the results follow.</p><Button variant="secondary" trailingIcon={RiArrowRightUpLine} onClick={() => { setOpenSections(prev => ({ ...prev, psychology: true })); requestAnimationFrame(() => document.getElementById("psychology")?.scrollIntoView({ behavior: "smooth" })); }}>Review psychology</Button></div>}
             </div>
           </section>
+          <div className="streak-strip glass-panel">
+            <div><span className="text-body-2-regular text-text-secondary">Current streak</span><strong className="text-headline-medium">{loading ? "…" : streak.type ? `${streak.current} ${streak.type === "win" ? (streak.current === 1 ? "win" : "wins") : (streak.current === 1 ? "loss" : "losses")}` : "No trades"}</strong></div>
+            <div><span className="text-body-2-regular text-text-secondary">Longest win streak</span><strong className="text-headline-medium">{loading ? "…" : `${streak.longest} ${streak.longest === 1 ? "trade" : "trades"}`}</strong></div>
+            <div><span className="text-body-2-regular text-text-secondary">Average R multiple</span><strong className="text-headline-medium">{data ? signedR(data.avgR) : "N/A"}</strong></div>
+            <p className="text-body-2-regular text-text-secondary">{lossStreakWarning || "Small improvements. Measurable progress."}</p>
+          </div>
           <section className="grid gap-4 xl:grid-cols-3">
             <div className="xl:col-span-2">
               <WeeklyCalendar trades={data?.trades} loading={loading} />
@@ -1827,10 +1718,17 @@ export default function MinimalTradeJournalDashboard() {
 
         <div className="border-t border-slate-200" />
 
+        <div className="intelligence-grid">
+          <div className="glass-panel next-action-panel"><div className="panel-label"><RiSparklingLine size={18} /><h2 className="text-headline-medium">Next Best Action</h2></div><p className="text-body-2-regular text-text-secondary mb-4">Patterns from your trading journal</p>
+            {loading ? <div className="h-20 animate-pulse rounded-xl bg-background-secondary-default" /> : data?.insights?.length ? <div className="space-y-3">{data.insights.map((ins, i) => <InsightCard key={i} insight={ins} />)}</div> : <div className="insight-empty"><RiBookOpenLine size={28} /><p className="text-body-regular">Your next insight starts with a note.</p><p className="text-body-2-regular">Add reflections to your Notion trades to uncover patterns in your decisions.</p></div>}
+          </div>
+          <MacroPanel macro={macro} macroLoading={macroLoading} macroError={macroError} onRefresh={loadMacro} />
+        </div>
+
         {/* ── SECTION 2: Setups ── */}
         <Section id="setups" title="Setups" subtitle="Setup stats, win rate, expectancy, trade log" icon="🎯" openSections={openSections} toggleSection={toggleSection}>
           <section className="grid gap-4 xl:grid-cols-2">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+            <div className="glass-panel p-5">
               <div className="flex gap-0 rounded-lg overflow-hidden border border-slate-200 w-fit mb-4">
                 {["setups", "trades"].map(tab => (
                   <button key={tab} onClick={() => setActiveTab(tab)}
@@ -1877,13 +1775,13 @@ export default function MinimalTradeJournalDashboard() {
                 </div>
               )}
             </div>
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+            <div className="glass-panel p-5">
               <h2 className="text-sm font-semibold mb-1">Win Rate by Setup</h2>
               <p className="text-[10px] font-mono text-slate-400 mb-4">Green = 50%+, red = below 50%</p>
               {loading ? <div className="h-72 bg-slate-50 rounded-xl animate-pulse" /> :
                 data?.setupStats?.length ? (
                   <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 320, height: 224 }}>
                       <BarChart data={data.setupStats} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                         <XAxis dataKey="setup" tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
@@ -1941,74 +1839,7 @@ export default function MinimalTradeJournalDashboard() {
           <JournalAI data={data} />
         </Section>
 
-        {/* Setup stats + trade log */}
-        <section className="grid gap-4 xl:grid-cols-2">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-            <div className="flex gap-0 rounded-lg overflow-hidden border border-slate-200 w-fit mb-4">
-              {["setups", "trades"].map(tab => (
-                <button key={tab} onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-2 text-[11px] font-mono border-r border-slate-200 last:border-r-0 transition-colors duration-150 capitalize
-                    ${activeTab === tab ? "bg-slate-950 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
-                  {tab === "setups" ? "Setup stats" : "Trade log"}
-                </button>
-              ))}
-            </div>
-            {activeTab === "setups" && (
-              loading ? (
-                <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-14 bg-slate-50 rounded-xl animate-pulse" />)}</div>
-              ) : data?.setupStats?.length ? (
-                <div>{data.setupStats.map(s => <SetupRow key={s.setup} setup={s} />)}</div>
-              ) : <p className="text-xs font-mono text-slate-400">No setups for this range.</p>
-            )}
-            {activeTab === "trades" && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-slate-100">
-                      {["Date","Pair","Setup","Result","Session","R / $"].map(h => (
-                        <th key={h} className="pb-2 px-3 text-[9px] font-mono uppercase tracking-widest text-slate-400 font-normal">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <tr><td colSpan={6} className="py-4 text-xs font-mono text-slate-400 text-center">Loading…</td></tr>
-                    ) : data?.trades?.length ? (
-                      data.trades.slice(0, 20).map(t => <TradeRow key={t.id} trade={t} />)
-                    ) : (
-                      <tr><td colSpan={6} className="py-4 text-xs font-mono text-slate-400">No trades in this range.</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-            <h2 className="text-sm font-semibold mb-1">Win Rate by Setup</h2>
-            <p className="text-[10px] font-mono text-slate-400 mb-4">Green = 50%+, red = below 50%</p>
-            {loading ? <div className="h-72 bg-slate-50 rounded-xl animate-pulse" /> :
-              data?.setupStats?.length ? (
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={data.setupStats} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey="setup" tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
-                      <YAxis domain={[0, 100]} tick={{ fontFamily: "monospace", fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={v => v + "%"} width={36} />
-                      <Tooltip content={<SetupTooltip />} />
-                      <Bar dataKey="winRate" radius={[6, 6, 0, 0]}>
-                        {data.setupStats.map((s, i) => (
-                          <Cell key={i} fill={s.winRate >= 50 ? "rgba(22,163,74,0.75)" : "rgba(220,38,38,0.7)"} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <div className="h-72 flex items-center justify-center text-xs font-mono text-slate-400">No setup data for this range.</div>
-              )}
-          </div>
-        </section>
+        <footer className="dashboard-footer text-body-2-regular"><span>MyJournal. Built around your process.</span><span>Trade data from Notion</span></footer>
 
       </div>
     </main>

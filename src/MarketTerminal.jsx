@@ -37,23 +37,23 @@ const AI_BIAS_INTERVAL_MS = 45 * 60 * 1000;
 const AI_BIAS_MAX_AGE_MS = 45 * 60 * 1000;
 
 const STATUS_STYLES = {
-  validated:   { text: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", icon: CheckCircle2, label: "VALIDATED" },
-  invalidated: { text: "text-rose-400",    bg: "bg-rose-500/10",    border: "border-rose-500/30",    icon: XCircle,      label: "INVALIDATED" },
-  pending:     { text: "text-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/30",   icon: MinusCircle,  label: "PENDING" },
-  loading:     { text: "text-slate-500",   bg: "bg-slate-800/30",   border: "border-slate-800",      icon: Loader2,      label: "LOADING", spin: true },
-  neutral:     { text: "text-slate-400",   bg: "bg-slate-500/10",   border: "border-slate-500/30",   icon: Circle,       label: "NO MACRO EDGE" },
+  validated:   { text: "text-status-lime-text", bg: "bg-emerald-500/10", border: "border-emerald-500/30", icon: CheckCircle2, label: "VALIDATED" },
+  invalidated: { text: "text-status-rose-text",    bg: "bg-rose-500/10",    border: "border-rose-500/30",    icon: XCircle,      label: "INVALIDATED" },
+  pending:     { text: "text-status-yellow-text",   bg: "bg-amber-500/10",   border: "border-amber-500/30",   icon: MinusCircle,  label: "PENDING" },
+  loading:     { text: "text-text-tertiary",   bg: "bg-background-tertiary-default",   border: "border-slate-800",      icon: Loader2,      label: "LOADING", spin: true },
+  neutral:     { text: "text-text-secondary",   bg: "bg-slate-500/10",   border: "border-slate-500/30",   icon: Circle,       label: "NO MACRO EDGE" },
 };
 
 const BIAS_STYLES = {
-  strengthening: "bg-emerald-500/20 text-emerald-300",
-  weakening:     "bg-rose-500/20 text-rose-300",
-  neutral:       "bg-slate-700/50 text-slate-300",
+  strengthening: "bg-emerald-500/20 text-status-lime-text",
+  weakening:     "bg-rose-500/20 text-status-rose-text",
+  neutral:       "bg-background-tertiary-default text-text-secondary",
 };
 
 const TREND_ICON = { bullish: ArrowUp, bearish: ArrowDown, ranging: Minus, insufficient: Minus };
 const TREND_COLOR = {
-  bullish: "text-emerald-400", bearish: "text-rose-400",
-  ranging: "text-slate-500", insufficient: "text-slate-700",
+  bullish: "text-status-lime-text", bearish: "text-status-rose-text",
+  ranging: "text-text-tertiary", insufficient: "text-slate-700",
 };
 
 // Approx UTC session windows (not DST-adjusted).
@@ -171,9 +171,9 @@ function buildSquawkPrompt(quotes, structure, aiBias) {
 // ─── Panel shell ────────────────────────────────────────────────────────
 function Panel({ icon: Icon, iconColor = "text-amber-500", title, right, children, bodyClass = "p-4" }) {
   return (
-    <div className="border border-white/10 bg-[#0a0d12] rounded">
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/10">
-        <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300 uppercase tracking-widest">
+    <div className="glass-panel">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-separator-border">
+        <div className="flex items-center gap-2 text-[11px] font-bold text-text-secondary uppercase tracking-widest">
           <Icon size={13} className={iconColor} /> {title}
         </div>
         {right}
@@ -189,7 +189,7 @@ function TickerTape({ quotes }) {
   const items = WATCHLIST.map((w) => ({ ...w, q: quotes[w.symbol] }));
   const doubled = [...items, ...items];
   return (
-    <div className="w-full overflow-hidden bg-black border-b border-amber-500/20 py-2">
+    <div className="w-full overflow-hidden glass-panel terminal-ticker py-2">
       {hasAnyQuote ? (
         <div className="ticker-track flex gap-8 flex-nowrap">
           {doubled.map((it, i) => {
@@ -197,8 +197,8 @@ function TickerTape({ quotes }) {
             const up = q && !q.error && (q.percentChange ?? 0) >= 0;
             return (
               <span key={i} className="flex-shrink-0 inline-flex items-center gap-2 text-[11px] px-2 whitespace-nowrap tabular-nums">
-                <span className="text-slate-500">{it.label}</span>
-                <span className={q && !q.error ? (up ? "text-emerald-400" : "text-rose-400") : "text-slate-600"}>
+                <span className="text-text-tertiary">{it.label}</span>
+                <span className={q && !q.error ? (up ? "text-status-lime-text" : "text-status-rose-text") : "text-text-tertiary"}>
                   {q && !q.error ? formatPrice(it.group, it.symbol, q.price) : "—"}
                 </span>
                 {q && !q.error && (
@@ -211,7 +211,7 @@ function TickerTape({ quotes }) {
           })}
         </div>
       ) : (
-        <div className="flex items-center justify-center gap-2 text-[11px] text-slate-600">
+        <div className="flex items-center justify-center gap-2 text-[11px] text-text-tertiary">
           <Loader2 size={11} className="animate-spin" /> Waiting for live feed…
         </div>
       )}
@@ -224,29 +224,29 @@ function CommandBar({ query, onQueryChange, onSearch, results, onSelect, loading
   return (
     <div className="relative">
       <form onSubmit={onSearch} className="relative">
-        <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
+        <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary" />
         <input
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder="Quick lookup — e.g. AAPL, USD/CHF"
-          className="pl-7 pr-3 py-2 text-[11px] rounded bg-[#0a0d12] border border-white/10 text-slate-300 placeholder-slate-600 focus:outline-none focus:border-amber-500/40 w-56"
+          className="pl-7 pr-3 py-2 text-[11px] rounded bg-background-primary-default border border-border-button-default text-text-secondary placeholder-slate-600 focus:outline-none focus:border-amber-500/40 w-56"
         />
       </form>
       {loading && (
-        <div className="absolute z-10 mt-1 w-56 rounded border border-white/10 bg-[#0a0d12] px-3 py-2 text-[11px] text-slate-500">
+        <div className="absolute z-10 mt-1 w-56 rounded border border-border-button-default bg-background-primary-default px-3 py-2 text-[11px] text-text-tertiary">
           Searching…
         </div>
       )}
       {!loading && results.length > 0 && (
-        <div className="absolute z-10 mt-1 w-72 rounded border border-white/10 bg-[#0a0d12] shadow-xl overflow-hidden">
+        <div className="absolute z-10 mt-1 w-72 rounded border border-border-button-default bg-background-primary-default shadow-xl overflow-hidden">
           {results.map((r) => (
             <button
               key={`${r.symbol}-${r.exchange}`}
               onClick={() => onSelect(r)}
-              className="w-full text-left px-3 py-2 text-[11px] hover:bg-white/5 transition-colors border-b border-white/5 last:border-b-0"
+              className="w-full text-left px-3 py-2 text-[11px] hover:bg-background-secondary-hover transition-colors border-b border-separator-border last:border-b-0"
             >
-              <span className="text-slate-200 font-bold">{r.symbol}</span>
-              <span className="text-slate-500 ml-2">{r.instrument_name}</span>
+              <span className="text-text-primary font-bold">{r.symbol}</span>
+              <span className="text-text-tertiary ml-2">{r.instrument_name}</span>
             </button>
           ))}
         </div>
@@ -259,23 +259,23 @@ function LookupCard({ result, onDismiss }) {
   if (!result) return null;
   const { symbol, name, quote, error } = result;
   return (
-    <div className="rounded border border-white/10 bg-[#0a0d12] px-4 py-3 flex items-center justify-between text-[11px]">
+    <div className="rounded border border-border-button-default bg-background-primary-default px-4 py-3 flex items-center justify-between text-[11px]">
       {error ? (
-        <span className="text-rose-400">{symbol}: {error}</span>
+        <span className="text-status-rose-text">{symbol}: {error}</span>
       ) : (
         <div>
-          <p className="text-slate-100 font-bold text-sm">
-            {symbol} <span className="text-slate-500 font-normal text-[11px]">{name}</span>
+          <p className="text-text-primary font-bold text-sm">
+            {symbol} <span className="text-text-tertiary font-normal text-[11px]">{name}</span>
           </p>
-          <p className="text-slate-400 mt-0.5 tabular-nums">
+          <p className="text-text-secondary mt-0.5 tabular-nums">
             {quote.price}{" "}
-            <span className={quote.percentChange >= 0 ? "text-emerald-400" : "text-rose-400"}>
+            <span className={quote.percentChange >= 0 ? "text-status-lime-text" : "text-status-rose-text"}>
               {quote.percentChange >= 0 ? "+" : ""}{quote.percentChange.toFixed(2)}%
             </span>
           </p>
         </div>
       )}
-      <button onClick={onDismiss} className="text-slate-500 hover:text-slate-300 transition-colors">
+      <button onClick={onDismiss} className="text-text-tertiary hover:text-text-secondary transition-colors">
         <X size={14} />
       </button>
     </div>
@@ -291,7 +291,7 @@ function MacroStrip({ macro, generatedAt, loading, onRefresh }) {
       title="Macro"
       bodyClass="px-4 py-2.5"
       right={
-        <button onClick={onRefresh} className="text-slate-500 hover:text-slate-300 transition-colors">
+        <button onClick={onRefresh} className="text-text-tertiary hover:text-text-secondary transition-colors">
           <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
         </button>
       }
@@ -299,20 +299,20 @@ function MacroStrip({ macro, generatedAt, loading, onRefresh }) {
       <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-[11px]">
         {macro ? (
           <>
-            <span className="text-slate-300 capitalize">{macro.sentiment || "unknown"}</span>
+            <span className="text-text-secondary capitalize">{macro.sentiment || "unknown"}</span>
             {macro.fearGreed && (
-              <span className="text-slate-500">F&amp;G {macro.fearGreed.score} · {macro.fearGreed.rating}</span>
+              <span className="text-text-tertiary">F&amp;G {macro.fearGreed.score} · {macro.fearGreed.rating}</span>
             )}
             {nextEvent && (
-              <span className="text-slate-500">
+              <span className="text-text-tertiary">
                 Next: {nextEvent.name} ({nextEvent.currency}) {nextEvent.isToday ? "today" : nextEvent.date}
               </span>
             )}
           </>
         ) : (
-          <span className="text-slate-600">unavailable</span>
+          <span className="text-text-tertiary">unavailable</span>
         )}
-        <span className="text-slate-600 ml-auto">
+        <span className="text-text-tertiary ml-auto">
           {generatedAt ? `bias set ${new Date(generatedAt).toLocaleTimeString()}` : ""}
         </span>
       </div>
@@ -333,7 +333,7 @@ function StructureLadder({ daily, h4, h1 }) {
         const Icon = TREND_ICON[r.trend];
         return (
           <span key={r.label} className={`flex items-center gap-1 ${TREND_COLOR[r.trend]}`}>
-            <span className="text-slate-600">{r.label}</span>
+            <span className="text-text-tertiary">{r.label}</span>
             <Icon size={10} />
           </span>
         );
@@ -356,14 +356,14 @@ function ScenarioCard({ item, quote, candles, evalResult, biasEntry, biasLoading
   const biasValue = biasEntry?.bias || "neutral";
 
   return (
-    <div className="border border-white/10 bg-[#0a0d12] rounded p-4 space-y-3">
+    <div className="glass-panel p-4 space-y-3">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm font-bold text-slate-100">{item.label}</p>
-          <p className="text-[10px] uppercase tracking-widest text-slate-500">{item.group}</p>
+          <p className="text-sm font-bold text-text-primary">{item.label}</p>
+          <p className="text-[10px] uppercase tracking-widest text-text-tertiary">{item.group}</p>
         </div>
         <div className="text-right">
-          <p className={`text-lg font-bold tabular-nums ${quote && !quote.error ? (up ? "text-emerald-400" : "text-rose-400") : "text-slate-600"}`}>
+          <p className={`text-lg font-bold tabular-nums ${quote && !quote.error ? (up ? "text-status-lime-text" : "text-status-rose-text") : "text-text-tertiary"}`}>
             {quote && !quote.error ? formatPrice(item.group, item.symbol, quote.price) : "—"}
           </p>
           {quote && !quote.error && (
@@ -372,7 +372,7 @@ function ScenarioCard({ item, quote, candles, evalResult, biasEntry, biasLoading
               {(quote.percentChange ?? 0) >= 0 ? "+" : ""}{(quote.percentChange ?? 0).toFixed(2)}%
             </p>
           )}
-          {quote?.error && <p className="text-[10px] text-slate-600">no data</p>}
+          {quote?.error && <p className="text-[10px] text-text-tertiary">no data</p>}
         </div>
       </div>
 
@@ -388,16 +388,16 @@ function ScenarioCard({ item, quote, candles, evalResult, biasEntry, biasLoading
 
       <StructureLadder daily={dailyTrend} h4={h4Trend} h1={evalResult?.trend} />
 
-      <div className="rounded border border-white/10 bg-black/20 px-2.5 py-2 space-y-1.5">
+      <div className="rounded border border-separator-border bg-background-secondary-default px-2.5 py-2 space-y-1.5">
         <div className="flex items-center justify-between text-[10px]">
-          <span className="flex items-center gap-1.5 text-slate-500 uppercase tracking-widest">
+          <span className="flex items-center gap-1.5 text-text-tertiary uppercase tracking-widest">
             <Sparkles size={11} /> AI Bias
           </span>
           <span className={`px-2 py-0.5 rounded-full font-bold uppercase ${BIAS_STYLES[biasValue]}`}>
             {biasLoading && !biasEntry ? "…" : biasValue}
           </span>
         </div>
-        <p className="text-[11px] text-slate-400 leading-snug">
+        <p className="text-[11px] text-text-secondary leading-snug">
           {biasEntry?.reason || (biasLoading ? "Reading macro backdrop…" : "No reasoning yet — refresh the macro panel above.")}
         </p>
       </div>
@@ -407,14 +407,14 @@ function ScenarioCard({ item, quote, candles, evalResult, biasEntry, biasLoading
           <Icon size={12} className={s.spin ? "animate-spin" : ""} />
           {s.label}
           {evalResult?.trend && evalResult.trend !== "insufficient" && (
-            <span className="text-slate-500 font-normal normal-case ml-1">· 1H {evalResult.trend}</span>
+            <span className="text-text-tertiary font-normal normal-case ml-1">· 1H {evalResult.trend}</span>
           )}
         </div>
-        {evalResult?.detail && <p className="text-[10px] text-slate-500 mt-1 leading-snug">{evalResult.detail}</p>}
+        {evalResult?.detail && <p className="text-[10px] text-text-tertiary mt-1 leading-snug">{evalResult.detail}</p>}
       </div>
 
       <div className="space-y-1">
-        <span className="flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-widest">
+        <span className="flex items-center gap-1.5 text-[10px] text-text-tertiary uppercase tracking-widest">
           <StickyNote size={11} /> Notes
         </span>
         <textarea
@@ -422,7 +422,7 @@ function ScenarioCard({ item, quote, candles, evalResult, biasEntry, biasLoading
           onChange={(e) => onNoteChange(e.target.value)}
           placeholder="Your own read…"
           rows={2}
-          className="w-full bg-black/40 border border-white/10 rounded px-2 py-1.5 text-[11px] text-slate-300 placeholder-slate-600 resize-none focus:outline-none focus:border-amber-500/40"
+          className="w-full bg-background-secondary-default border border-separator-border rounded px-2 py-1.5 text-[11px] text-text-secondary placeholder-slate-600 resize-none focus:outline-none focus:border-amber-500/40"
         />
       </div>
     </div>
@@ -438,7 +438,7 @@ function CurrencyStrengthMeter({ quotes }) {
     <Panel icon={TrendingUp} title="Currency Strength">
       <div className="space-y-3">
         {ranking.length === 0 ? (
-          <p className="text-[11px] text-slate-600">Waiting for quotes…</p>
+          <p className="text-[11px] text-text-tertiary">Waiting for quotes…</p>
         ) : (
           <div className="space-y-1.5">
             {ranking.map((r) => {
@@ -446,14 +446,14 @@ function CurrencyStrengthMeter({ quotes }) {
               const widthPct = Math.min(100, (Math.abs(r.score) / maxAbs) * 100);
               return (
                 <div key={r.ccy} className="flex items-center gap-2 text-[11px]">
-                  <span className="w-9 text-slate-400 font-bold">{r.ccy}</span>
-                  <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <span className="w-9 text-text-secondary font-bold">{r.ccy}</span>
+                  <div className="flex-1 h-1.5 bg-background-tertiary-default rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full"
                       style={{ width: `${widthPct}%`, background: positive ? "#34d399" : "#fb7185" }}
                     />
                   </div>
-                  <span className={`w-14 text-right tabular-nums ${positive ? "text-emerald-400" : "text-rose-400"}`}>
+                  <span className={`w-14 text-right tabular-nums ${positive ? "text-status-lime-text" : "text-status-rose-text"}`}>
                     {positive ? "+" : ""}{r.score.toFixed(2)}%
                   </span>
                 </div>
@@ -461,7 +461,7 @@ function CurrencyStrengthMeter({ quotes }) {
             })}
           </div>
         )}
-        <p className="text-[10px] text-slate-600">Derived from EUR/USD, GBP/USD, GBP/JPY — covers EUR, USD, GBP, JPY only.</p>
+        <p className="text-[10px] text-text-tertiary">Derived from EUR/USD, GBP/USD, GBP/JPY — covers EUR, USD, GBP, JPY only.</p>
       </div>
     </Panel>
   );
@@ -508,7 +508,7 @@ function SituationalAwareness({ now, structure, aiBias }) {
   return (
     <Panel icon={Clock} title="Situational Awareness">
       <div className="space-y-4">
-        <div className="rounded border border-white/5 bg-black/30 p-2">
+        <div className="rounded border border-separator-border bg-background-secondary-default p-2">
           <WorldMap utcHour={utcHour} />
         </div>
 
@@ -519,24 +519,24 @@ function SituationalAwareness({ now, structure, aiBias }) {
               <div key={sess.name} className="flex items-center justify-between text-[11px]">
                 <span className="flex items-center gap-2">
                   <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-emerald-400 animate-pulse" : "bg-slate-700"}`} />
-                  <span className={active ? "text-slate-200" : "text-slate-500"}>{sess.name}</span>
+                  <span className={active ? "text-text-primary" : "text-text-tertiary"}>{sess.name}</span>
                 </span>
-                <span className={active ? "text-emerald-400" : "text-slate-600"}>{active ? "OPEN" : "closed"}</span>
+                <span className={active ? "text-status-lime-text" : "text-text-tertiary"}>{active ? "OPEN" : "closed"}</span>
               </div>
             );
           })}
         </div>
 
-        <div className="pt-3 border-t border-white/10 text-[11px] text-slate-400 space-y-1">
+        <div className="pt-3 border-t border-separator-border text-[11px] text-text-secondary space-y-1">
           <p className="tabular-nums">UTC {now.toISOString().slice(11, 19)} · Local {now.toLocaleTimeString()}</p>
           <p>
-            <span className="text-slate-300 font-bold">{activeBiasCount}</span> active AI bias{activeBiasCount === 1 ? "" : "es"} ·{" "}
-            <span className="text-emerald-400">{counts.validated} validated</span> ·{" "}
-            <span className="text-rose-400">{counts.invalidated} invalidated</span> ·{" "}
-            <span className="text-amber-400">{counts.pending} pending</span>
+            <span className="text-text-secondary font-bold">{activeBiasCount}</span> active AI bias{activeBiasCount === 1 ? "" : "es"} ·{" "}
+            <span className="text-status-lime-text">{counts.validated} validated</span> ·{" "}
+            <span className="text-status-rose-text">{counts.invalidated} invalidated</span> ·{" "}
+            <span className="text-status-yellow-text">{counts.pending} pending</span>
           </p>
           {counts.invalidated > 0 && (
-            <p className="flex items-center gap-1.5 text-rose-400 pt-1">
+            <p className="flex items-center gap-1.5 text-status-rose-text pt-1">
               <AlertTriangle size={12} /> Structure broke against {counts.invalidated} open bias{counts.invalidated === 1 ? "" : "es"} — reassess.
             </p>
           )}
@@ -556,7 +556,7 @@ function AlertsPanel({ alerts, enabled, onToggle }) {
         <button
           onClick={onToggle}
           className={`flex items-center gap-1.5 text-[10px] px-2 py-1 rounded border transition-colors ${
-            enabled ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10" : "border-white/10 text-slate-500 hover:text-slate-300"
+            enabled ? "border-emerald-500/30 text-status-lime-text bg-emerald-500/10" : "border-separator-border text-text-tertiary hover:text-text-secondary"
           }`}
         >
           {enabled ? <Bell size={11} /> : <BellOff size={11} />} {enabled ? "On" : "Off"}
@@ -565,12 +565,12 @@ function AlertsPanel({ alerts, enabled, onToggle }) {
     >
       <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
         {alerts.length === 0 && (
-          <p className="text-[11px] text-slate-600">No alerts yet — structure flips for/against your AI bias will show up here.</p>
+          <p className="text-[11px] text-text-tertiary">No alerts yet — structure flips for/against your AI bias will show up here.</p>
         )}
         {alerts.map((a) => (
           <div key={a.id} className={`border-l-2 pl-2.5 py-0.5 ${a.level === "validated" ? "border-emerald-500/40" : "border-rose-500/40"}`}>
-            <p className="text-[10px] text-slate-600">{a.time.toLocaleTimeString()}</p>
-            <p className={`text-[11px] leading-snug ${a.level === "validated" ? "text-emerald-300" : "text-rose-300"}`}>{a.text}</p>
+            <p className="text-[10px] text-text-tertiary">{a.time.toLocaleTimeString()}</p>
+            <p className={`text-[11px] leading-snug ${a.level === "validated" ? "text-status-lime-text" : "text-status-rose-text"}`}>{a.text}</p>
           </div>
         ))}
       </div>
@@ -583,22 +583,22 @@ function SquawkFeed({ squawks, loading, onRefresh }) {
   return (
     <Panel
       icon={Radio}
-      iconColor={loading ? "animate-pulse text-amber-400" : "text-amber-500"}
+      iconColor={loading ? "animate-pulse text-status-yellow-text" : "text-amber-500"}
       title="Live Market Squawk"
       right={
-        <button onClick={onRefresh} className="text-slate-500 hover:text-slate-300 transition-colors">
+        <button onClick={onRefresh} className="text-text-tertiary hover:text-text-secondary transition-colors">
           <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
         </button>
       }
     >
       <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
         {squawks.length === 0 && (
-          <p className="text-[11px] text-slate-600">{loading ? "Tuning in…" : "No squawk yet."}</p>
+          <p className="text-[11px] text-text-tertiary">{loading ? "Tuning in…" : "No squawk yet."}</p>
         )}
         {squawks.map((sq) => (
           <div key={sq.id} className="border-l-2 border-amber-500/40 pl-2.5 py-0.5">
-            <p className="text-[10px] text-slate-600">{sq.time.toLocaleTimeString()}</p>
-            <p className="text-[11px] text-slate-300 leading-snug">{sq.text}</p>
+            <p className="text-[10px] text-text-tertiary">{sq.time.toLocaleTimeString()}</p>
+            <p className="text-[11px] text-text-secondary leading-snug">{sq.text}</p>
           </div>
         ))}
       </div>
@@ -625,12 +625,12 @@ function AccountRiskPanel() {
       icon={AlertTriangle}
       iconColor={alert ? "text-red-500" : "text-amber-500"}
       title="Account Risk"
-      right={status?.login ? <span className="text-[10px] font-mono text-slate-500">#{status.login}</span> : null}
+      right={status?.login ? <span className="text-[10px] font-mono text-text-tertiary">#{status.login}</span> : null}
     >
       {loading ? (
-        <div className="h-10 bg-white/5 rounded animate-pulse" />
+        <div className="h-10 bg-background-secondary-default rounded animate-pulse" />
       ) : !status ? (
-        <p className="text-[11px] font-mono text-slate-500">Account status offline.</p>
+        <p className="text-[11px] font-mono text-text-tertiary">Account status offline.</p>
       ) : (
         <div className="space-y-3">
           {alert && (
@@ -639,21 +639,21 @@ function AccountRiskPanel() {
             </div>
           )}
           <div className="flex items-end justify-between">
-            <span className={`text-2xl font-bold font-mono ${alert ? "text-red-400" : "text-slate-100"}`}>{money(dist)}</span>
-            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">buffer to breach</span>
+            <span className={`text-2xl font-bold font-mono ${alert ? "text-text-error-primary" : "text-text-primary"}`}>{money(dist)}</span>
+            <span className="text-[10px] font-mono text-text-tertiary uppercase tracking-widest">buffer to breach</span>
           </div>
           <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
-            <div className="rounded bg-white/5 border border-white/10 px-2 py-1.5">
-              <span className="text-slate-500 block">Profit target</span>
-              <span className="text-slate-200">{money(status.currentProfit, 0)} / {money(status.profitTarget, 0)}</span>
+            <div className="rounded bg-background-secondary-default border border-separator-border px-2 py-1.5">
+              <span className="text-text-tertiary block">Profit target</span>
+              <span className="text-text-primary">{money(status.currentProfit, 0)} / {money(status.profitTarget, 0)}</span>
             </div>
-            <div className="rounded bg-white/5 border border-white/10 px-2 py-1.5">
-              <span className="text-slate-500 block">Equity floor</span>
-              <span className="text-slate-200">{money(status.breachFloorEquity, 0)}</span>
+            <div className="rounded bg-background-secondary-default border border-separator-border px-2 py-1.5">
+              <span className="text-text-tertiary block">Equity floor</span>
+              <span className="text-text-primary">{money(status.breachFloorEquity, 0)}</span>
             </div>
           </div>
           {status.updated && (
-            <p className="text-[9px] font-mono text-slate-600">synced {new Date(status.updated).toLocaleTimeString()}</p>
+            <p className="text-[9px] font-mono text-text-tertiary">synced {new Date(status.updated).toLocaleTimeString()}</p>
           )}
         </div>
       )}
@@ -960,19 +960,19 @@ export default function MarketTerminal() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#05070a] text-slate-200 font-mono">
+    <div className="market-terminal text-text-primary">
       <TickerTape quotes={quotes} />
-      <div className="mx-auto max-w-7xl p-4 md:p-6 space-y-6">
+      <div className="mx-auto space-y-6 pt-6">
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-3">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.25em] text-amber-500/80 mb-1 [text-shadow:0_0_10px_rgba(245,158,11,0.4)]">
+            <p className="text-[10px] uppercase tracking-[0.25em] text-text-tertiary mb-2">
               Latrell's Terminal
             </p>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-100">Market Command Desk</h1>
-            <p className="mt-1 text-[11px] text-slate-500">
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-text-primary">Market Command Desk</h1>
+            <p className="mt-1 text-[11px] text-text-tertiary">
               {lastQuoteAt ? `Quotes updated ${lastQuoteAt.toLocaleTimeString()}` : "Loading quotes…"}
-              {quoteError && <span className="text-rose-400 ml-2">· {quoteError}</span>}
-              {biasError && <span className="text-rose-400 ml-2">· AI bias: {biasError}</span>}
+              {quoteError && <span className="text-status-rose-text ml-2">· {quoteError}</span>}
+              {biasError && <span className="text-status-rose-text ml-2">· AI bias: {biasError}</span>}
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -986,7 +986,7 @@ export default function MarketTerminal() {
             />
             <button
               onClick={() => { loadQuotes(); loadSeries(); }}
-              className="flex items-center gap-2 text-[11px] px-3 py-2 rounded border border-white/10 text-slate-400 hover:text-slate-200 hover:border-white/20 transition-colors"
+              className="flex items-center gap-2 text-[11px] px-3 py-2 rounded border border-separator-border text-text-secondary hover:text-text-primary hover:border-white/20 transition-colors"
             >
               <RefreshCw size={12} className={loadingQuotes ? "animate-spin" : ""} /> Refresh
             </button>
@@ -999,7 +999,7 @@ export default function MarketTerminal() {
 
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6 items-start">
           <div className="space-y-3">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-white/10 pb-2">Scenario Desk</p>
+            <p className="text-xs font-bold text-text-secondary uppercase tracking-widest border-b border-separator-border pb-2">Scenario Desk</p>
             <div className="grid sm:grid-cols-2 gap-4">
               {WATCHLIST.map((item) => (
                 <ScenarioCard
@@ -1020,7 +1020,7 @@ export default function MarketTerminal() {
           </div>
 
           <div className="space-y-3">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-white/10 pb-2">Market Intel</p>
+            <p className="text-xs font-bold text-text-secondary uppercase tracking-widest border-b border-separator-border pb-2">Market Intel</p>
             <div className="space-y-6">
               <AccountRiskPanel />
               <CurrencyStrengthMeter quotes={quotes} />
