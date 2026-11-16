@@ -10,6 +10,7 @@ import { evaluateScenario, trendOf } from "./lib/marketStructure";
 import { computeCurrencyStrength } from "./lib/currencyStrength";
 import { GRID_COLS, GRID_ROWS, WORLD_DOTS, SESSION_CITIES } from "./lib/worldMap";
 import { useFnStatus } from "./RiskGauge";
+import { isBreached } from "./lib/accountStatus";
 
 const WORKER_URL = "https://noisy-rain-e6aftest.indersonlatrell7.workers.dev/";
 const AI_BIAS_KEY = "myjournal_terminal_ai_bias";
@@ -631,6 +632,8 @@ function AccountRiskPanel() {
         <div className="h-10 bg-background-secondary-default rounded animate-pulse" />
       ) : !status ? (
         <p className="text-[11px] font-mono text-text-tertiary">Account status offline.</p>
+      ) : isBreached(status) ? (
+        <p className="text-[11px] font-mono text-text-error-primary">Account breached — no active funded account. Add the new one in Notion to resume tracking.</p>
       ) : (
         <div className="space-y-3">
           {alert && (

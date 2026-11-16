@@ -140,7 +140,7 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .streak-strip strong { font-size: 17px; font-weight: 550; }
 .streak-strip span, .streak-strip p { font-size: 10px; }
 .streak-strip > p { border-inline-start: 1px solid var(--color-separator-border); padding-inline-start: 24px; line-height: 1.7; }
-.intelligence-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; }
+.intelligence-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 .next-action-panel { padding: 24px; }
 .panel-label { display: flex; align-items: center; gap: 8px; margin-block-end: 5px; color: var(--journal-accent); }
 .panel-label h2 { color: var(--color-text-primary); font-size: 15px; }

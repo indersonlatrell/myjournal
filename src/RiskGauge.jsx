@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { AlertTriangle, Target } from "lucide-react";
+import { RiErrorWarningLine } from "@remixicon/react";
+import { Chip } from "@/components/base/badges/chip";
+import { isBreached } from "./lib/accountStatus";
 
 // ─── FundedNext Account Risk gauge ──────────────────────────────────────────
 // Live challenge-account state (distance-to-breach, profit target, daily-loss
@@ -43,6 +46,26 @@ export function useFnStatus(workerUrl) {
   return { status, loading, reload: load };
 }
 
+function BreachedCard({ status }) {
+  return (
+    <div className="glass-panel flex flex-col gap-3 p-5">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="flex items-center gap-1.5 text-headline-medium text-text-primary">
+          <RiErrorWarningLine size={16} className="text-text-error-primary" aria-hidden="true" /> Account Risk
+        </h2>
+        <Chip variant="caption" color="rose">Breached</Chip>
+      </div>
+      <p className="text-body-medium text-text-primary">{status.account ? status.account.split(" — ")[0] : "Funded account"} is closed.</p>
+      <p className="text-body-2-regular text-text-secondary">
+        No active funded account. Add your new account to the Account Status table in Notion and the gauge picks it up automatically.
+      </p>
+      {status.updated && (
+        <p className="text-body-2-regular text-text-tertiary">Marked {new Date(status.updated).toLocaleDateString()}</p>
+      )}
+    </div>
+  );
+}
+
 export default function RiskGauge({ status, loading }) {
   if (loading) {
     return (
@@ -66,6 +89,8 @@ export default function RiskGauge({ status, loading }) {
       </div>
     );
   }
+
+  if (isBreached(status)) return <BreachedCard status={status} />;
 
   const dist = Number(status.distanceToBreach);
   const target = Number(status.profitTarget) || 0;

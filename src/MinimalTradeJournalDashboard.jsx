@@ -15,6 +15,7 @@ import { SegmentedControl, SegmentedControlItem } from "@/components/base/segmen
 import { StatCards } from "@/components/application/dashboard/stat-cards";
 import { cx } from "@/utils/cx";
 import RiskGauge, { useFnStatus } from "./RiskGauge";
+import { isBreached } from "./lib/accountStatus";
 import DayContext from "./DayContext";
 
 const WORKER_URL = "https://noisy-rain-e6aftest.indersonlatrell7.workers.dev/";
@@ -1701,7 +1702,7 @@ export default function MinimalTradeJournalDashboard({ navigationRequest }) {
               />
             </motion.div>
             <div className="performance-sidebar">
-              <PayoutTracker netPnl={netPnl} loading={loading} fnTarget={isFunded ? fnStatus?.profitTarget : null} />
+              <PayoutTracker netPnl={netPnl} loading={loading} fnTarget={isFunded && !isBreached(fnStatus) ? fnStatus?.profitTarget : null} />
               {isFunded ? <RiskGauge status={fnStatus} loading={fnLoading} /> : <div className="glass-panel discipline-panel"><span className="discipline-icon"><RiFocus3Line size={22} /></span><h2 className="text-headline-medium">Process over outcome.</h2><p className="text-body-regular text-text-secondary">Review your execution, follow your rules, and let the results follow.</p><Button variant="secondary" trailingIcon={RiArrowRightUpLine} onClick={() => { setOpenSections(prev => ({ ...prev, psychology: true })); requestAnimationFrame(() => document.getElementById("psychology")?.scrollIntoView({ behavior: "smooth" })); }}>Review psychology</Button></div>}
             </div>
           </section>
