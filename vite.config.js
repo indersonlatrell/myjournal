@@ -6,4 +6,15 @@ import { fileURLToPath, URL } from 'node:url'
 export default defineConfig({
   plugins: [react()],
   resolve: { alias: { '@': fileURLToPath(new URL('.', import.meta.url)) } },
+  // Dev-only CORS proxy for futures candles (prod uses the Worker /futures route).
+  server: {
+    proxy: {
+      '/yahoo': {
+        target: 'https://query1.finance.yahoo.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/yahoo/, ''),
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+      },
+    },
+  },
 })

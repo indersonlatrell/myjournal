@@ -15,6 +15,7 @@ import { SegmentedControl, SegmentedControlItem } from "@/components/base/segmen
 import { StatCards } from "@/components/application/dashboard/stat-cards";
 import { cx } from "@/utils/cx";
 import RiskGauge, { useFnStatus } from "./RiskGauge";
+import DayContext from "./DayContext";
 
 const WORKER_URL = "https://noisy-rain-e6aftest.indersonlatrell7.workers.dev/";
 const PAYOUT_KEY = "myjournal_payout_target";
@@ -1656,6 +1657,8 @@ export default function MinimalTradeJournalDashboard({ navigationRequest }) {
             { icon: RiStackLine, label: "Best Setup", value: data?.bestSetup?.setup || "No trades", delta: data?.bestSetup ? `${data.bestSetup.winRate}% win rate` : "This period", deltaColor: "neutral" },
           ]} />}
         </div>
+
+        <DayContext workerUrl={WORKER_URL} />
 
         {/* ── SECTION 1: Performance ── */}
         <Section id="performance" title="Performance" subtitle="Your results, at a glance" icon="📈" openSections={openSections} toggleSection={toggleSection}>
