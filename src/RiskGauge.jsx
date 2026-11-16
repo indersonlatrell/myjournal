@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { AlertTriangle, Target } from "lucide-react";
-import { RiErrorWarningLine } from "@remixicon/react";
+import { RiShieldLine } from "@remixicon/react";
 import { Chip } from "@/components/base/badges/chip";
+import { ProgressBar } from "@/components/base/progress/progress";
+import { Skeleton } from "@/components/base/skeleton/skeleton";
+import { EmptyState, Metric, Panel, Tile } from "./journal/ui";
 import { isBreached } from "./lib/accountStatus";
 
 // ─── FundedNext Account Risk gauge ──────────────────────────────────────────
@@ -46,51 +48,37 @@ export function useFnStatus(workerUrl) {
   return { status, loading, reload: load };
 }
 
-function BreachedCard({ status }) {
-  return (
-    <div className="glass-panel flex flex-col gap-3 p-5">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-1.5 text-headline-medium text-text-primary">
-          <RiErrorWarningLine size={16} className="text-text-error-primary" aria-hidden="true" /> Account Risk
-        </h2>
-        <Chip variant="caption" color="rose">Breached</Chip>
-      </div>
-      <p className="text-body-medium text-text-primary">{status.account ? status.account.split(" — ")[0] : "Funded account"} is closed.</p>
-      <p className="text-body-2-regular text-text-secondary">
-        No active funded account. Add your new account to the Account Status table in Notion and the gauge picks it up automatically.
-      </p>
-      {status.updated && (
-        <p className="text-body-2-regular text-text-tertiary">Marked {new Date(status.updated).toLocaleDateString()}</p>
-      )}
-    </div>
-  );
+function accountName(status) {
+  return status.account ? status.account.split(" — ")[0] : "Funded account";
 }
 
 export default function RiskGauge({ status, loading }) {
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-        <div className="h-4 w-40 bg-slate-100 rounded animate-pulse mb-4" />
-        <div className="h-8 w-32 bg-slate-100 rounded animate-pulse" />
-      </div>
+      <Panel icon={RiShieldLine} title="Account risk">
+        <Skeleton className="h-16 w-full rounded-xl" />
+      </Panel>
     );
   }
 
   if (!status) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-        <h2 className="text-sm font-semibold flex items-center gap-1.5">
-          <AlertTriangle size={14} className="text-slate-400" /> Account Risk
-        </h2>
-        <p className="text-[10px] font-mono text-slate-400 mt-3">
-          Account status not connected yet. Add the{" "}
-          <span className="text-slate-600">/status</span> route to the Worker to unlock the live breach gauge.
-        </p>
-      </div>
+      <Panel icon={RiShieldLine} title="Account risk">
+        <EmptyState>Account status isn't connected yet. Add the /status route to the Worker to show the live breach gauge.</EmptyState>
+      </Panel>
     );
   }
 
-  if (isBreached(status)) return <BreachedCard status={status} />;
+  if (isBreached(status)) {
+    return (
+      <Panel icon={RiShieldLine} title="Account risk" subtitle={accountName(status)} action={<Chip variant="caption" color="rose">Breached</Chip>}>
+        <p className="text-body-2-regular text-text-secondary">
+          This account is closed. Add your new account to the Account Status table in Notion and this card picks it up automatically.
+        </p>
+        {status.updated && <span className="text-caption-1-medium text-text-tertiary">Marked {new Date(status.updated).toLocaleDateString()}</span>}
+      </Panel>
+    );
+  }
 
   const dist = Number(status.distanceToBreach);
   const target = Number(status.profitTarget) || 0;
@@ -100,72 +88,20 @@ export default function RiskGauge({ status, loading }) {
   const progress = target > 0 ? Math.min(100, Math.max(0, (current / target) * 100)) : 0;
 
   return (
-    <div className={`bg-white rounded-2xl border shadow-sm p-5 ${alert ? "border-red-300" : "border-slate-200"}`}>
-      <div className="flex items-center justify-between mb-1">
-        <h2 className="text-sm font-semibold flex items-center gap-1.5">
-          <AlertTriangle size={14} className={alert ? "text-red-500" : "text-amber-500"} />
-          Account Risk
-        </h2>
-        <span className="text-[10px] font-mono text-slate-400">
-          {status.login ? `#${status.login}` : (status.account || "Account")}
-        </span>
-      </div>
-      <p className="text-[10px] font-mono text-slate-400 mb-4">
-        {status.account ? status.account.split(" — ")[0] : "Funded account"} · {status.status || "Active"}
-      </p>
-
-      {alert && (
-        <div className="mb-3 rounded-xl bg-red-50 border border-red-200 px-4 py-2 text-xs font-mono text-red-700 flex items-center gap-2">
-          <AlertTriangle size={12} className="text-red-500" />
-          Close to breach — protect the account.
-        </div>
-      )}
-
-      {/* Distance to breach */}
-      <div className="flex items-end justify-between mb-1">
-        <p className={`text-2xl font-bold font-mono ${alert ? "text-red-500" : "text-slate-900"}`}>
-          {money(dist)}
-        </p>
-        <p className="text-xs font-mono text-slate-400">buffer to breach</p>
-      </div>
-      {floor > 0 && (
-        <p className="text-[10px] font-mono text-slate-400 mb-2">Equity floor {money(floor, 0)}</p>
-      )}
-
-      {/* Profit target progress */}
+    <Panel icon={RiShieldLine} title="Account risk" subtitle={`${accountName(status)} · ${status.login ? `#${status.login}` : "Active"}`}
+      action={alert ? <Chip variant="caption" color="rose">Close to breach</Chip> : <Chip variant="caption" color="lime">Active</Chip>}>
+      <Metric size="lg" label="Buffer to breach" value={money(dist)} valueClassName={alert ? "text-text-error-primary" : undefined}
+        hint={floor > 0 ? `Equity floor ${money(floor, 0)}` : undefined} />
       {target > 0 && (
-        <div className="mt-3">
-          <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mb-1">
-            <span className="flex items-center gap-1"><Target size={10} /> Profit target</span>
-            <span>{money(current, 0)} / {money(target, 0)}</span>
-          </div>
-          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-            <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${progress}%` }} />
-          </div>
+        <ProgressBar label="Profit target" value={progress} description={`${money(current, 0)} of ${money(target, 0)}`} />
+      )}
+      {(status.dailyLossRemaining != null || status.consistency) && (
+        <div className="grid grid-cols-2 gap-2">
+          {status.dailyLossRemaining != null && <Tile><Metric label="Daily loss left" value={money(status.dailyLossRemaining)} /></Tile>}
+          {status.consistency && <Tile><Metric label="Consistency" value={status.consistency} /></Tile>}
         </div>
       )}
-
-      {/* Secondary stats */}
-      <div className="grid grid-cols-2 gap-2 mt-4 text-[10px] font-mono">
-        {status.dailyLossRemaining !== undefined && status.dailyLossRemaining !== null && (
-          <div className="rounded-lg bg-slate-50 border border-slate-200 px-2 py-1.5">
-            <span className="text-slate-400 block">Daily loss left</span>
-            <span className="text-slate-800">{money(status.dailyLossRemaining)}</span>
-          </div>
-        )}
-        {status.consistency && (
-          <div className="rounded-lg bg-slate-50 border border-slate-200 px-2 py-1.5">
-            <span className="text-slate-400 block">Consistency</span>
-            <span className="text-slate-800">{status.consistency}</span>
-          </div>
-        )}
-      </div>
-
-      {status.updated && (
-        <p className="text-[9px] font-mono text-slate-300 mt-3">
-          synced {new Date(status.updated).toLocaleString()}
-        </p>
-      )}
-    </div>
+      {status.updated && <span className="text-caption-1-medium text-text-tertiary">Synced {new Date(status.updated).toLocaleString()}</span>}
+    </Panel>
   );
 }

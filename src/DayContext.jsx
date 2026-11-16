@@ -4,6 +4,7 @@ import { Button } from "@/components/base/buttons/button";
 import { Chip } from "@/components/base/badges/chip";
 import { SegmentedControl, SegmentedControlItem } from "@/components/base/segmented-control/segmented-control";
 import { cx } from "@/utils/cx";
+import { Panel } from "./journal/ui";
 import { INSTRUMENTS, buildDayContext, chartUrl, parseChart } from "./lib/dayContext";
 
 // ─── Day Context ────────────────────────────────────────────────────────────
@@ -152,24 +153,19 @@ export default function DayContext({ workerUrl }) {
   const dateLabel = data ? new Date(`${data.sessionDate}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }) : null;
 
   return (
-    <section className="glass-panel flex flex-col gap-5 p-5" aria-labelledby="day-context-title" aria-busy={loading}>
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <RiCompass3Line size={20} className="mt-0.5 text-foreground-icon-secondary" aria-hidden="true" />
-          <div>
-            <h2 id="day-context-title" className="text-headline-medium text-text-primary">Day context</h2>
-            <p className="text-body-2-regular text-text-secondary">
-              {data ? `${instrument} session ${dateLabel} · New York time` : "Key levels for today's session"}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+    <Panel
+      icon={RiCompass3Line}
+      title="Day context"
+      subtitle={data ? `${instrument} session ${dateLabel} · New York time` : "Key levels for today's session"}
+      action={
+        <>
           <SegmentedControl aria-label="Instrument" selectedKeys={new Set([instrument])} onSelectionChange={changeInstrument}>
             {INSTRUMENTS.map((i) => <SegmentedControlItem key={i.id} id={i.id}>{i.label}</SegmentedControlItem>)}
           </SegmentedControl>
           <Button variant="secondary" iconOnly leadingIcon={RiRefreshLine} aria-label="Refresh day context" title="Refresh day context" disabled={loading} onClick={reload} className={cx(loading && "refresh-loading")} />
-        </div>
-      </header>
+        </>
+      }
+    >
 
       {error && !data ? (
         <p className="rounded-xl border border-separator-border bg-background-secondary-default p-4 text-body-2-regular text-text-secondary">
@@ -236,6 +232,6 @@ export default function DayContext({ workerUrl }) {
           </p>
         </>
       )}
-    </section>
+    </Panel>
   );
 }
