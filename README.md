@@ -1,16 +1,57 @@
-# React + Vite
+# myjournal
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A personal trading journal and market terminal. The site is a React + Vite app
+deployed on Render. Its data comes from a Cloudflare Worker that reads the
+trade journal in Notion.
 
-Currently, two official plugins are available:
+## Layout
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```
+src/                    the web app
+  main.jsx, App.jsx     entry point and workspace shell (sidebar, Journal / Terminal switch)
+  config.js             Worker URL shared by every feature
+  styles/app.css        app-level styles (BoardUI tokens + glass panels)
+  features/
+    journal/            the Journal dashboard
+      JournalDashboard.jsx   page layout and data loading
+      panels/               cards grouped by section (performance, setups, psychology, insights)
+      ui.jsx                shared card primitives (Panel, Tile, Metric, EmptyState, ...)
+      stats.js, format.js   calculations and number formatting
+    day-context/        NQ / ES key levels card
+    account/            funded-account risk card and breach check
+    terminal/           the Market Terminal page and its data helpers
 
-## React Compiler
+components/             BoardUI components (installed source, don't hand-edit)
+styles/                 BoardUI theme, typography and globals
+utils/                  BoardUI helpers (cx, ...)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+worker/                 the Cloudflare Worker (noisy-rain-e6aftest)
+  wrangler.toml
+  src/index.js          router
+  src/routes/           one file per endpoint: trades, macro, chat, status, futures
+  src/lib/              Notion and HTTP helpers
+```
 
-## Expanding the ESLint configuration
+## Worker endpoints
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+| Route | What it returns |
+|---|---|
+| `GET /?range=7d\|30d\|90d\|ytd&account=funded\|other\|all` | Trades from Notion inside the date window (counted back from today) plus totals |
+| `GET /macro` | Fear & Greed sentiment and high-impact events for the next 7 days |
+| `POST /chat` | Groq answer about the trades sent in the body |
+| `GET /status` | Latest row of the Notion "Account Status" table |
+| `GET /futures?symbol=NQ=F\|ES=F&interval=5m\|1d&range=5d\|3mo` | CME futures candles for Day Context |
+
+## Running locally
+
+```bash
+npm install
+npm run dev
+```
+
+## Deploying
+
+- **Site:** push to `main`; Render rebuilds automatically.
+- **Worker:** `cd worker && npx wrangler deploy`. Secrets (`GROQ_API_KEY`,
+  `NOTION_API_KEY`, `NOTION_DATABASE_ID`) are stored in Cloudflare and survive
+  deploys. Change one with `npx wrangler secret put GROQ_API_KEY`.

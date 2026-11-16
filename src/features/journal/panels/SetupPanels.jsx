@@ -7,9 +7,9 @@ import { Skeleton } from "@/components/base/skeleton/skeleton";
 import { Tab, TabList, TabPanel, Tabs } from "@/components/base/tabs/tabs";
 import { ScrollFade, useScrollFade } from "@/components/foundations/scroll-fade/scroll-fade";
 import { cx } from "@/utils/cx";
-import { AXIS_TICK, CHART_NEGATIVE, CHART_POSITIVE, signedR, signedUSD, toneClass } from "./format";
-import { buildConfluenceStats } from "./stats";
-import { ChartTooltip, EmptyState, InlineInsight, Panel, SkeletonStack } from "./ui";
+import { AXIS_TICK, CHART_NEGATIVE, CHART_POSITIVE, signedR, signedUSD, toneClass } from "@/src/features/journal/format";
+import { buildConfluenceStats } from "@/src/features/journal/stats";
+import { ChartTooltip, EmptyState, InlineInsight, Panel, SkeletonStack } from "@/src/features/journal/ui";
 
 function expectancyOf(setup) {
   const wr = setup.winRate / 100;

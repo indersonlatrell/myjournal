@@ -4,8 +4,8 @@ import { Button } from "@/components/base/buttons/button";
 import { Chip } from "@/components/base/badges/chip";
 import { SegmentedControl, SegmentedControlItem } from "@/components/base/segmented-control/segmented-control";
 import { cx } from "@/utils/cx";
-import { Panel } from "./journal/ui";
-import { INSTRUMENTS, buildDayContext, chartUrl, parseChart } from "./lib/dayContext";
+import { Panel } from "@/src/features/journal/ui";
+import { INSTRUMENTS, buildDayContext, chartUrl, parseChart } from "@/src/features/day-context/levels";
 
 // ─── Day Context ────────────────────────────────────────────────────────────
 // Pre-session reference levels for NQ/ES futures: previous day/week extremes,

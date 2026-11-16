@@ -1,4 +1,4 @@
-import { WORKER_URL } from "./config";
+import { WORKER_URL } from "@/src/config";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 export function buildEquityCurve(trades) {
@@ -202,4 +202,79 @@ export async function askJournal({ question, trades, stats, signal }) {
   const reply = typeof json.reply === "string" ? json.reply.trim() : "";
   if (!json.success || !reply || FAILED_REPLY.test(reply)) return null;
   return reply;
+}
+
+// ─── Trades by date range ──────────────────────────────────────────────────
+// The Worker filters by each trade's date (worker/src/routes/trades.js). The app
+// re-applies the same window and recomputes totals as a guard, so a stale or
+// misbehaving Worker can never show trades from outside the selected range.
+const RANGE_DAYS = { "7d": 7, "30d": 30, "90d": 90 };
+
+export function rangeStart(range, now = new Date()) {
+  if (range === "ytd") return new Date(now.getFullYear(), 0, 1);
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - ((RANGE_DAYS[range] ?? 30) - 1));
+  return start;
+}
+
+const num = (v) => (typeof v === "number" && !Number.isNaN(v) ? v : 0);
+const round2 = (v) => Number(v.toFixed(2));
+
+export function summarizeTrades(trades) {
+  const wins = trades.filter((t) => t.win).length;
+  const totalR = trades.reduce((s, t) => s + num(t.r), 0);
+  const netProfit = trades.reduce((s, t) => s + num(t.pnl), 0);
+
+  const bySetup = {};
+  for (const t of trades) {
+    const name = t.setup || "Uncategorized";
+    const s = (bySetup[name] ||= { setup: name, trades: 0, wins: 0, losses: 0, totalR: 0, totalPnl: 0 });
+    s.trades++;
+    if (t.win) s.wins++; else s.losses++;
+    s.totalR += num(t.r);
+    s.totalPnl += num(t.pnl);
+  }
+  const setupStats = Object.values(bySetup)
+    .map((s) => ({ ...s, totalR: round2(s.totalR), totalPnl: round2(s.totalPnl), winRate: Math.round((s.wins / s.trades) * 100), avgR: round2(s.totalR / s.trades) }))
+    .sort((a, b) => b.totalR - a.totalR || b.winRate - a.winRate);
+
+  return {
+    count: trades.length,
+    wins,
+    losses: trades.length - wins,
+    winRate: trades.length ? Math.round((wins / trades.length) * 100) : 0,
+    totalR: round2(totalR),
+    avgR: trades.length ? round2(totalR / trades.length) : 0,
+    netProfit: round2(netProfit),
+    setupStats,
+    bestSetup: setupStats[0] || null,
+  };
+}
+
+async function fetchRange(range, account) {
+  const res = await fetch(`${WORKER_URL}?range=${range}&account=${account}`);
+  if (!res.ok) throw new Error(`Unable to sync trades (${res.status}). Try refreshing.`);
+  const json = await res.json();
+  if (!json.success) throw new Error(json.message || "Worker returned success: false");
+  return json;
+}
+
+export async function fetchTrades(range, account, now = new Date()) {
+  const base = await fetchRange(range, account);
+  const start = rangeStart(range, now);
+  const trades = (base.trades || [])
+    .filter((t) => {
+      if (!t.date) return false;
+      const d = new Date(t.date);
+      return d >= start && d <= now;
+    })
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  return {
+    ...base,
+    trades,
+    ...summarizeTrades(trades),
+    insights: trades.length ? base.insights : [],
+  };
 }

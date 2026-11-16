@@ -9,9 +9,9 @@ import { Input } from "@/components/base/input/input";
 import { ProgressBar } from "@/components/base/progress/progress";
 import { ScrollFade, useScrollFade } from "@/components/foundations/scroll-fade/scroll-fade";
 import { cx } from "@/utils/cx";
-import { fmt, signedR, signedUSD, toneClass } from "./format";
-import { buildDayStats, buildMistakes, buildQualityStats } from "./stats";
-import { EmptyState, InlineInsight, Metric, Panel, SkeletonStack, Tile } from "./ui";
+import { fmt, signedR, signedUSD, toneClass } from "@/src/features/journal/format";
+import { buildDayStats, buildMistakes, buildQualityStats } from "@/src/features/journal/stats";
+import { EmptyState, InlineInsight, Metric, Panel, SkeletonStack, Tile } from "@/src/features/journal/ui";
 
 const RULES_KEY = "myjournal_rules";
 const GOALS_KEY = "myjournal_goals";

@@ -3,8 +3,8 @@ import { RiShieldLine } from "@remixicon/react";
 import { Chip } from "@/components/base/badges/chip";
 import { ProgressBar } from "@/components/base/progress/progress";
 import { Skeleton } from "@/components/base/skeleton/skeleton";
-import { EmptyState, Metric, Panel, Tile } from "./journal/ui";
-import { isBreached } from "./lib/accountStatus";
+import { EmptyState, Metric, Panel, Tile } from "@/src/features/journal/ui";
+import { isBreached } from "@/src/features/account/accountStatus";
 
 // ─── FundedNext Account Risk gauge ──────────────────────────────────────────
 // Live challenge-account state (distance-to-breach, profit target, daily-loss

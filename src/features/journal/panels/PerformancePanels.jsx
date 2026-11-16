@@ -7,9 +7,9 @@ import { ProgressBar } from "@/components/base/progress/progress";
 import { SegmentedControl, SegmentedControlItem } from "@/components/base/segmented-control/segmented-control";
 import { Skeleton } from "@/components/base/skeleton/skeleton";
 import { cx } from "@/utils/cx";
-import { AXIS_TICK, CHART_NEGATIVE, CHART_POSITIVE, fmt, signedR, signedUSD, toneClass } from "./format";
-import { buildMonthlyPnl, buildWeeklyGrid } from "./stats";
-import { ChartTooltip, EmptyState, InlineInsight, Metric, Panel, SkeletonStack, Tile } from "./ui";
+import { AXIS_TICK, CHART_NEGATIVE, CHART_POSITIVE, fmt, signedR, signedUSD, toneClass } from "@/src/features/journal/format";
+import { buildMonthlyPnl, buildWeeklyGrid } from "@/src/features/journal/stats";
+import { ChartTooltip, EmptyState, InlineInsight, Metric, Panel, SkeletonStack, Tile } from "@/src/features/journal/ui";
 
 const PAYOUT_KEY = "myjournal_payout_target";
 

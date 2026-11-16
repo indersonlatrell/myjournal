@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { RiSparklingLine } from "@remixicon/react";
 import { Skeleton } from "@/components/base/skeleton/skeleton";
 import { cx } from "@/utils/cx";
-import { askJournal } from "./stats";
+import { askJournal } from "@/src/features/journal/stats";
 
 // ─── Shared card primitives ─────────────────────────────────────────────────
 // Every dashboard card uses Panel so headers, padding, gaps and type match.

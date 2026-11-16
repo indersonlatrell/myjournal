@@ -1,0 +1,17 @@
+# Cloudflare Worker that serves myjournal: trades from Notion, macro calendar,
+# Groq chat, funded-account status and CME futures candles.
+# Deploy from this folder: npx wrangler deploy
+# Secrets live in Cloudflare (GROQ_API_KEY, NOTION_API_KEY, NOTION_DATABASE_ID)
+# and are kept across deploys.
+name = "noisy-rain-e6aftest"
+main = "src/index.js"
+compatibility_date = "2026-05-27"
+workers_dev = true
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+invocation_logs = true

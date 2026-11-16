@@ -4,16 +4,16 @@ import { Button } from "@/components/base/buttons/button";
 import { SegmentedControl, SegmentedControlItem } from "@/components/base/segmented-control/segmented-control";
 import { StatCards } from "@/components/application/dashboard/stat-cards";
 import { cx } from "@/utils/cx";
-import RiskGauge, { useFnStatus } from "./RiskGauge";
-import { isBreached } from "./lib/accountStatus";
-import DayContext from "./DayContext";
-import { WORKER_URL } from "./journal/config";
-import { signedR, signedUSD } from "./journal/format";
-import { buildEquityCurve, calcStreak, fetchMacroIntel } from "./journal/stats";
-import { EquityPanel, MonthlyPnl, PayoutTracker, ProcessCard, StreakStrip, WeeklySummary } from "./journal/PerformancePanels";
-import { ConfluencePanel, SetupsPanel, WinRateChart } from "./journal/SetupPanels";
-import { DayAnalysisPanel, GoalTracker, MistakesPanel, OneAndDoneTracker, RulesPanel, TradeQualityPanel } from "./journal/PsychologyPanels";
-import { JournalAI, MacroPanel, MacroWarningBanner, NextBestAction } from "./journal/InsightPanels";
+import RiskGauge, { useFnStatus } from "@/src/features/account/RiskGauge";
+import { isBreached } from "@/src/features/account/accountStatus";
+import DayContext from "@/src/features/day-context/DayContext";
+import { WORKER_URL } from "@/src/config";
+import { signedR, signedUSD } from "@/src/features/journal/format";
+import { buildEquityCurve, calcStreak, fetchMacroIntel, fetchTrades } from "@/src/features/journal/stats";
+import { EquityPanel, MonthlyPnl, PayoutTracker, ProcessCard, StreakStrip, WeeklySummary } from "@/src/features/journal/panels/PerformancePanels";
+import { ConfluencePanel, SetupsPanel, WinRateChart } from "@/src/features/journal/panels/SetupPanels";
+import { DayAnalysisPanel, GoalTracker, MistakesPanel, OneAndDoneTracker, RulesPanel, TradeQualityPanel } from "@/src/features/journal/panels/PsychologyPanels";
+import { JournalAI, MacroPanel, MacroWarningBanner, NextBestAction } from "@/src/features/journal/panels/InsightPanels";
 
 const SECTIONS_KEY = "myjournal_sections";
 
@@ -61,7 +61,7 @@ function AccountToggle({ account, onChange }) {
 }
 
 // ─── Main Dashboard ────────────────────────────────────────────────────────
-export default function MinimalTradeJournalDashboard({ navigationRequest }) {
+export default function JournalDashboard({ navigationRequest }) {
   const requestId = useRef(0);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [range, setRange] = useState("30d");
@@ -113,10 +113,7 @@ export default function MinimalTradeJournalDashboard({ navigationRequest }) {
     setData(null);
     setError(null);
     try {
-      const res = await fetch(`${WORKER_URL}?range=${r}&account=${acc}`);
-      if (!res.ok) throw new Error(`Unable to sync trades (${res.status}). Try refreshing.`);
-      const json = await res.json();
-      if (!json.success) throw new Error(json.message || "Worker returned success: false");
+      const json = await fetchTrades(r, acc);
       if (id !== requestId.current) return;
       setData(json);
       setLastUpdated(new Date());
@@ -186,8 +183,8 @@ export default function MinimalTradeJournalDashboard({ navigationRequest }) {
 
         <div aria-busy={loading} aria-label="Trading summary">
           {loading ? <div className="metric-skeleton-grid">{[1, 2, 3, 4].map(i => <div key={i} className="glass-panel metric-skeleton"><span /><span /><span /></div>)}</div> : <StatCards className="journal-stats" stats={[
-            { icon: RiFundsLine, label: "Net P&L", value: data ? signedUSD(netPnl) : "N/A", valueTone: netPnl < 0 ? "negative" : "positive", delta: data ? `${data.count} trades` : "No data", deltaColor: netPnl < 0 ? "rose" : "neutral" },
-            { icon: RiPulseLine, label: "Net R", value: data ? signedR(data.totalR) : "N/A", valueTone: data?.totalR < 0 ? "negative" : "positive", delta: "Risk-adjusted", deltaColor: "neutral" },
+            { icon: RiFundsLine, label: "Net P&L", value: data ? signedUSD(netPnl) : "N/A", valueTone: netPnl < 0 ? "negative" : netPnl > 0 ? "positive" : undefined, delta: data ? `${data.count} trades` : "No data", deltaColor: netPnl < 0 ? "rose" : "neutral" },
+            { icon: RiPulseLine, label: "Net R", value: data ? signedR(data.totalR) : "N/A", valueTone: data?.totalR < 0 ? "negative" : data?.totalR > 0 ? "positive" : undefined, delta: "Risk-adjusted", deltaColor: "neutral" },
             { icon: RiPercentLine, label: "Win Rate", value: data ? `${data.winRate}%` : "N/A", delta: data ? `${data.wins}W / ${data.losses}L` : "No data", deltaColor: "neutral" },
             { icon: RiStackLine, label: "Best Setup", value: data?.bestSetup?.setup || "No trades", delta: data?.bestSetup ? `${data.bestSetup.winRate}% win rate` : "This period", deltaColor: "neutral" },
           ]} />}

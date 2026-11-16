@@ -3,9 +3,9 @@ import { RiArrowRightUpLine, RiBookOpenLine, RiDashboardLine, RiFundsBoxLine, Ri
 import { Button, ButtonLink } from "@/components/base/buttons/button";
 import { SegmentedControl, SegmentedControlItem } from "@/components/base/segmented-control/segmented-control";
 import { cx } from "@/utils/cx";
-import MinimalTradeJournalDashboard from "./MinimalTradeJournalDashboard";
+import JournalDashboard from "@/src/features/journal/JournalDashboard";
 
-const MarketTerminal = lazy(() => import("./MarketTerminal"));
+const MarketTerminal = lazy(() => import("@/src/features/terminal/MarketTerminal"));
 const VIEW_KEY = "myjournal_active_view";
 const NAV_ITEMS = [
   { id: "overview", label: "Overview", icon: RiDashboardLine },
@@ -72,7 +72,7 @@ export default function App() {
             <ButtonLink href="https://www.notion.so" target="_blank" rel="noreferrer" variant="secondary" trailingIcon={RiArrowRightUpLine} className="notion-link">Open Notion</ButtonLink>
           </div>
         </div>
-        {view === "journal" ? <MinimalTradeJournalDashboard navigationRequest={navigationRequest} /> : (
+        {view === "journal" ? <JournalDashboard navigationRequest={navigationRequest} /> : (
           <Suspense fallback={<div className="glass-panel p-8 text-body-regular" role="status">Loading market terminal…</div>}><MarketTerminal /></Suspense>
         )}
       </div>

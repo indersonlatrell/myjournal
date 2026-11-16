@@ -5,14 +5,14 @@ import {
   Radio, Clock, TrendingUp, TrendingDown, AlertTriangle, Sparkles, Landmark,
   Bell, BellOff, Search, X, ArrowUp, ArrowDown, Minus, StickyNote,
 } from "lucide-react";
-import { WATCHLIST, fetchQuotes, fetchQuote, fetchSeries, searchSymbols, acquireCredits, formatPrice } from "./lib/twelveData";
-import { evaluateScenario, trendOf } from "./lib/marketStructure";
-import { computeCurrencyStrength } from "./lib/currencyStrength";
-import { GRID_COLS, GRID_ROWS, WORLD_DOTS, SESSION_CITIES } from "./lib/worldMap";
-import { useFnStatus } from "./RiskGauge";
-import { isBreached } from "./lib/accountStatus";
+import { WATCHLIST, fetchQuotes, fetchQuote, fetchSeries, searchSymbols, acquireCredits, formatPrice } from "@/src/features/terminal/lib/twelveData";
+import { evaluateScenario, trendOf } from "@/src/features/terminal/lib/marketStructure";
+import { computeCurrencyStrength } from "@/src/features/terminal/lib/currencyStrength";
+import { GRID_COLS, GRID_ROWS, WORLD_DOTS, SESSION_CITIES } from "@/src/features/terminal/lib/worldMap";
+import { useFnStatus } from "@/src/features/account/RiskGauge";
+import { isBreached } from "@/src/features/account/accountStatus";
 
-const WORKER_URL = "https://noisy-rain-e6aftest.indersonlatrell7.workers.dev/";
+import { WORKER_URL } from "@/src/config";
 const AI_BIAS_KEY = "myjournal_terminal_ai_bias";
 const NOTES_KEY = "myjournal_terminal_notes";
 const ALERTS_ENABLED_KEY = "myjournal_terminal_alerts_enabled";

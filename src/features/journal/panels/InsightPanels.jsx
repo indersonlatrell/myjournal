@@ -5,8 +5,8 @@ import { Chip } from "@/components/base/badges/chip";
 import { Input } from "@/components/base/input/input";
 import { ScrollFade, useScrollFade } from "@/components/foundations/scroll-fade/scroll-fade";
 import { cx } from "@/utils/cx";
-import { askJournal } from "./stats";
-import { EmptyState, Panel, SkeletonStack, Tile } from "./ui";
+import { askJournal } from "@/src/features/journal/stats";
+import { EmptyState, Panel, SkeletonStack, Tile } from "@/src/features/journal/ui";
 
 // ─── Macro environment ─────────────────────────────────────────────────────
 const SENTIMENT_CHIP = { "risk-on": "lime", "risk-off": "rose", neutral: "neutral" };

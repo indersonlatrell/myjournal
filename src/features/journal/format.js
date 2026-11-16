@@ -1,6 +1,6 @@
 export function fmt(n, d = 2) { return Number(n).toFixed(d); }
-export function signedR(n) { return (n >= 0 ? "+" : "") + fmt(n) + "R"; }
-export function signedUSD(n) { return (n >= 0 ? "+$" : "-$") + Math.abs(n).toFixed(2); }
+export function signedR(n) { return (n > 0 ? "+" : "") + fmt(n) + "R"; }
+export function signedUSD(n) { return (n > 0 ? "+$" : n < 0 ? "-$" : "$") + Math.abs(n).toFixed(2); }
 
 // Positive values use the journal accent, negative values the error token.
 export function toneClass(n) {
