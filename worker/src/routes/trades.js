@@ -1,4 +1,4 @@
-// GET /?range=7d|30d|90d|ytd&account=funded|other|all
+// GET /?range=7d|30d|90d|ytd|all&account=funded|other|all
 // Reads the trade journal from Notion and returns trades plus summary stats.
 import { json } from "../lib/http.js";
 import { checkbox, date, multiSelect, number, queryDatabase, select, text } from "../lib/notion.js";
@@ -6,7 +6,9 @@ import { checkbox, date, multiSelect, number, queryDatabase, select, text } from
 const RANGE_DAYS = { "7d": 7, "30d": 30, "90d": 90 };
 
 // Start of the window, counted back from today (not from the latest trade).
+// `all` returns every trade (used by the payout tracker's own start date).
 export function rangeStart(range, now = new Date()) {
+  if (range === "all") return new Date(0);
   if (range === "ytd") return new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
   const days = RANGE_DAYS[range] ?? 30;
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));

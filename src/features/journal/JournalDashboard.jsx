@@ -5,7 +5,6 @@ import { SegmentedControl, SegmentedControlItem } from "@/components/base/segmen
 import { StatCards } from "@/components/application/dashboard/stat-cards";
 import { cx } from "@/utils/cx";
 import RiskGauge, { useFnStatus } from "@/src/features/account/RiskGauge";
-import { isBreached } from "@/src/features/account/accountStatus";
 import DayContext from "@/src/features/day-context/DayContext";
 import { WORKER_URL } from "@/src/config";
 import { signedR, signedUSD } from "@/src/features/journal/format";
@@ -204,7 +203,7 @@ export default function JournalDashboard({ navigationRequest }) {
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
             <EquityPanel data={data} netPnl={netPnl} equityCurve={equityCurve} loading={loading} rangeLabel={rangeLabel} />
             <div className="flex flex-col gap-4 [&>*:last-child]:flex-1">
-              <PayoutTracker netPnl={netPnl} loading={loading} fnTarget={isFunded && !isBreached(fnStatus) ? fnStatus?.profitTarget : null} />
+              <PayoutTracker account={account} fnStatus={isFunded ? fnStatus : null} />
               {isFunded ? <RiskGauge status={fnStatus} loading={fnLoading} /> : <ProcessCard onReview={openPsychology} />}
             </div>
           </div>

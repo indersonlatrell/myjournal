@@ -211,6 +211,7 @@ export async function askJournal({ question, trades, stats, signal }) {
 const RANGE_DAYS = { "7d": 7, "30d": 30, "90d": 90 };
 
 export function rangeStart(range, now = new Date()) {
+  if (range === "all") return new Date(0);
   if (range === "ytd") return new Date(now.getFullYear(), 0, 1);
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);

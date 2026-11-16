@@ -36,7 +36,7 @@ worker/                 the Cloudflare Worker (noisy-rain-e6aftest)
 
 | Route | What it returns |
 |---|---|
-| `GET /?range=7d\|30d\|90d\|ytd&account=funded\|other\|all` | Trades from Notion inside the date window (counted back from today) plus totals |
+| `GET /?range=7d\|30d\|90d\|ytd\|all&account=funded\|other\|all` | Trades from Notion inside the date window (counted back from today) plus totals |
 | `GET /macro` | Fear & Greed sentiment and high-impact events for the next 7 days |
 | `POST /chat` | Groq answer about the trades sent in the body |
 | `GET /status` | Latest row of the Notion "Account Status" table |

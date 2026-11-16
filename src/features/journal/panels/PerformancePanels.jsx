@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { RiArrowRightUpLine, RiBarChartGroupedLine, RiCalendarCheckLine, RiFocus3Line, RiLineChartLine, RiPencilLine, RiTrophyLine } from "@remixicon/react";
 import { Button } from "@/components/base/buttons/button";
@@ -8,18 +8,33 @@ import { SegmentedControl, SegmentedControlItem } from "@/components/base/segmen
 import { Skeleton } from "@/components/base/skeleton/skeleton";
 import { cx } from "@/utils/cx";
 import { AXIS_TICK, CHART_NEGATIVE, CHART_POSITIVE, fmt, signedR, signedUSD, toneClass } from "@/src/features/journal/format";
-import { buildMonthlyPnl, buildWeeklyGrid } from "@/src/features/journal/stats";
+import { buildMonthlyPnl, buildWeeklyGrid, fetchTrades } from "@/src/features/journal/stats";
+import { isBreached } from "@/src/features/account/accountStatus";
 import { ChartTooltip, EmptyState, InlineInsight, Metric, Panel, SkeletonStack, Tile } from "@/src/features/journal/ui";
 
-const PAYOUT_KEY = "myjournal_payout_target";
+const PAYOUT_KEY = "myjournal_payout";
+const LEGACY_TARGET_KEY = "myjournal_payout_target";
 
-function readTarget() {
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+// Payout settings per account: { funded: { target, start }, other: { target, start } }.
+// `start` is the first day counted toward the payout (e.g. when an account was bought).
+function readPayoutSettings() {
   try {
-    const saved = localStorage.getItem(PAYOUT_KEY);
-    return saved ? Number(saved) : null;
+    const saved = JSON.parse(localStorage.getItem(PAYOUT_KEY) || "null");
+    if (saved) return saved;
+    const legacy = Number(localStorage.getItem(LEGACY_TARGET_KEY));
+    return legacy > 0 ? { other: { target: legacy, start: todayISO() }, funded: { target: legacy, start: todayISO() } } : {};
   } catch {
-    return null;
+    return {};
   }
+}
+
+function writePayoutSettings(settings) {
+  try { localStorage.setItem(PAYOUT_KEY, JSON.stringify(settings)); } catch { /* storage unavailable */ }
 }
 
 // ─── Equity curve ──────────────────────────────────────────────────────────
@@ -79,54 +94,94 @@ export function EquityPanel({ data, netPnl, equityCurve, loading, rangeLabel }) 
 }
 
 // ─── Payout tracker ────────────────────────────────────────────────────────
-export function PayoutTracker({ netPnl, loading, fnTarget }) {
-  const [manualTarget, setManualTarget] = useState(readTarget);
-  const target = manualTarget ?? (Number(fnTarget) > 0 ? Number(fnTarget) : 0);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
+// Counts P&L from its own start date, not from the dashboard's date filter.
+// A live, non-breached funded account uses the numbers from Account Status.
+function useTradesSince(account, start) {
+  const [state, setState] = useState({ key: null, trades: [], error: null });
+  const key = `${account}|${start}`;
+  useEffect(() => {
+    if (!start) return;
+    let active = true;
+    fetchTrades("all", account)
+      .then((d) => { if (active) setState({ key, trades: d.trades, error: null }); })
+      .catch((err) => { if (active) setState({ key, trades: [], error: err.message }); });
+    return () => { active = false; };
+  }, [account, start, key]);
 
+  const from = start ? new Date(`${start}T00:00:00`) : null;
+  const trades = state.key === key && from ? state.trades.filter((t) => new Date(t.date) >= from) : [];
+  return { trades, loading: Boolean(start) && state.key !== key, error: state.key === key ? state.error : null };
+}
+
+export function PayoutTracker({ account, fnStatus }) {
+  const [settings, setSettings] = useState(readPayoutSettings);
+  const mine = settings[account] || {};
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({ target: "", start: "" });
+
+  const live = account === "funded" && fnStatus && !isBreached(fnStatus) && Number(fnStatus.profitTarget) > 0;
+  const { trades, loading, error } = useTradesSince(account, live ? null : mine.start);
+
+  const target = live ? Number(fnStatus.profitTarget) : Number(mine.target) || 0;
+  const pnl = live ? Number(fnStatus.currentProfit) || 0 : trades.reduce((s, t) => s + (typeof t.pnl === "number" ? t.pnl : 0), 0);
+
+  function startEdit() {
+    setDraft({ target: mine.target ? String(mine.target) : "", start: mine.start || todayISO() });
+    setEditing(true);
+  }
   function save() {
-    const n = parseFloat(draft);
+    const n = parseFloat(draft.target);
     if (!Number.isNaN(n) && n > 0) {
-      setManualTarget(n);
-      try { localStorage.setItem(PAYOUT_KEY, String(n)); } catch { /* storage unavailable */ }
+      const next = { ...settings, [account]: { target: n, start: draft.start || todayISO() } };
+      setSettings(next);
+      writePayoutSettings(next);
     }
     setEditing(false);
   }
 
-  const progress = target > 0 ? Math.min(100, Math.max(0, (netPnl / target) * 100)) : 0;
-  const remaining = target > 0 ? Math.max(0, target - netPnl) : 0;
-  const achieved = target > 0 && netPnl >= target;
+  const progress = target > 0 ? Math.min(100, Math.max(0, (pnl / target) * 100)) : 0;
+  const remaining = target > 0 ? Math.max(0, target - pnl) : 0;
+  const achieved = target > 0 && pnl >= target;
+  const since = mine.start ? new Date(`${mine.start}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : null;
+  const subtitle = live ? "From your funded account status" : since ? `Counting from ${since}` : "Your next trading milestone";
 
   return (
     <Panel
       icon={RiTrophyLine}
       title="Payout tracker"
-      subtitle="Your next trading milestone"
-      action={!editing && (
-        <Button variant="ghost" size="small" leadingIcon={RiPencilLine} onClick={() => { setEditing(true); setDraft(target ? String(target) : ""); }}>
+      subtitle={subtitle}
+      action={!editing && !live && (
+        <Button variant="ghost" size="small" leadingIcon={RiPencilLine} onClick={startEdit}>
           {target > 0 ? "Edit" : "Set target"}
         </Button>
       )}
     >
       {editing ? (
-        <div className="flex items-end gap-2">
-          <Input label="Payout target ($)" type="number" value={draft} onChange={setDraft} placeholder="1000" autoFocus
-            onKeyDown={(e) => e.key === "Enter" && save()} className="flex-1" />
-          <Button onClick={save}>Save</Button>
+        <div className="flex flex-col gap-3">
+          <Input label="Payout target ($)" type="number" value={draft.target} onChange={(v) => setDraft((d) => ({ ...d, target: v }))}
+            placeholder="1000" autoFocus onKeyDown={(e) => e.key === "Enter" && save()} />
+          <Input label="Count trades from" type="date" value={draft.start} onChange={(v) => setDraft((d) => ({ ...d, start: v }))}
+            hint="Usually the day you started this account or payout cycle." />
+          <div className="flex gap-2">
+            <Button onClick={save} className="flex-1">Save</Button>
+            <Button variant="secondary" onClick={() => setEditing(false)}>Cancel</Button>
+          </div>
         </div>
       ) : target === 0 ? (
-        <EmptyState>Set a target to track progress toward your next payout.</EmptyState>
+        <EmptyState>Set a target and a start date to track progress toward your next payout.</EmptyState>
+      ) : error ? (
+        <EmptyState>Couldn't load trades for the payout tracker. Try refreshing.</EmptyState>
       ) : (
         <>
           <div className="flex items-baseline justify-between gap-2">
             {loading ? <Skeleton className="h-8 w-28 rounded-lg" /> : (
-              <span className={cx("text-title-2-medium tabular-nums", toneClass(netPnl))}>{signedUSD(netPnl)}</span>
+              <span className={cx("text-title-2-medium tabular-nums", toneClass(pnl))}>{signedUSD(pnl)}</span>
             )}
             <span className="text-body-2-regular text-text-tertiary">of ${fmt(target, 0)}</span>
           </div>
           <ProgressBar aria-label="Progress to payout target" value={progress}
-            description={achieved ? "Target reached. Request your payout." : `${fmt(progress, 1)}% complete · $${fmt(remaining, 2)} to go`} />
+            description={achieved ? "Target reached. Request your payout."
+              : `${fmt(progress, 1)}% complete · $${fmt(remaining, 2)} to go${live ? "" : ` · ${trades.length} ${trades.length === 1 ? "trade" : "trades"}`}`} />
         </>
       )}
     </Panel>
