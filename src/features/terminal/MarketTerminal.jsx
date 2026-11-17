@@ -7,7 +7,6 @@ import {
 } from "lucide-react";
 import { WATCHLIST, fetchQuotes, fetchQuote, fetchSeries, searchSymbols, acquireCredits, formatPrice } from "@/src/features/terminal/lib/twelveData";
 import { evaluateScenario, trendOf } from "@/src/features/terminal/lib/marketStructure";
-import { computeCurrencyStrength } from "@/src/features/terminal/lib/currencyStrength";
 import { GRID_COLS, GRID_ROWS, WORLD_DOTS, SESSION_CITIES } from "@/src/features/terminal/lib/worldMap";
 import { useFnStatus } from "@/src/features/account/RiskGauge";
 import { isBreached } from "@/src/features/account/accountStatus";
@@ -137,7 +136,7 @@ function buildBiasPrompt(macro) {
       ].filter(Boolean).join("\n")
     : "Macro feed unavailable right now — use your general knowledge of the current macro/rates/geopolitical backdrop.";
 
-  return `You are a macro strategist setting higher-timeframe directional bias for a discretionary trader's watchlist. Ignore any prior trade-journal instructions — this is a pure macro-analysis request, not trade analysis. Base each call ONLY on macro fundamentals, cross-asset risk sentiment, central bank / rate expectations, and geopolitical tension — NOT on any instrument's own recent price action, since that gets checked separately against your call.
+  return `You are a macro strategist setting higher-timeframe directional bias for a discretionary NQ/ES futures trader. Ignore any prior trade-journal instructions — this is a pure macro-analysis request, not trade analysis. Base each call ONLY on macro fundamentals, cross-asset risk sentiment, central bank / rate expectations, and geopolitical tension — NOT on any instrument's own recent price action, since that gets checked separately against your call.
 
 Macro backdrop:
 ${macroLines}
@@ -145,14 +144,11 @@ ${macroLines}
 Instruments (assign each a bias):
 - NQ: Nasdaq-100 (US tech-heavy equity index)
 - ES: S&P 500 (US broad equity index)
-- EURUSD: Euro vs US Dollar
-- GBPUSD: British Pound vs US Dollar
-- GBPJPY: British Pound vs Japanese Yen
 
 For each, decide "strengthening" (bullish HTF bias), "weakening" (bearish HTF bias), or "neutral" (no clear macro edge), with one reason under 18 words.
 
 Respond with ONLY raw JSON, no markdown fences, no prose before or after, exactly this shape:
-{"NQ":{"bias":"strengthening","reason":"..."},"ES":{"bias":"...","reason":"..."},"EURUSD":{"bias":"...","reason":"..."},"GBPUSD":{"bias":"...","reason":"..."},"GBPJPY":{"bias":"...","reason":"..."}}`;
+{"NQ":{"bias":"strengthening","reason":"..."},"ES":{"bias":"...","reason":"..."}}`;
 }
 
 function buildSquawkPrompt(quotes, structure, aiBias) {
@@ -427,44 +423,6 @@ function ScenarioCard({ item, quote, candles, evalResult, biasEntry, biasLoading
         />
       </div>
     </div>
-  );
-}
-
-// ─── Currency strength meter ────────────────────────────────────────────
-function CurrencyStrengthMeter({ quotes }) {
-  const ranking = useMemo(() => computeCurrencyStrength(quotes), [quotes]);
-  const maxAbs = Math.max(0.01, ...ranking.map((r) => Math.abs(r.score)));
-
-  return (
-    <Panel icon={TrendingUp} title="Currency Strength">
-      <div className="space-y-3">
-        {ranking.length === 0 ? (
-          <p className="text-[11px] text-text-tertiary">Waiting for quotes…</p>
-        ) : (
-          <div className="space-y-1.5">
-            {ranking.map((r) => {
-              const positive = r.score >= 0;
-              const widthPct = Math.min(100, (Math.abs(r.score) / maxAbs) * 100);
-              return (
-                <div key={r.ccy} className="flex items-center gap-2 text-[11px]">
-                  <span className="w-9 text-text-secondary font-bold">{r.ccy}</span>
-                  <div className="flex-1 h-1.5 bg-background-tertiary-default rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${widthPct}%`, background: positive ? "#34d399" : "#fb7185" }}
-                    />
-                  </div>
-                  <span className={`w-14 text-right tabular-nums ${positive ? "text-status-lime-text" : "text-status-rose-text"}`}>
-                    {positive ? "+" : ""}{r.score.toFixed(2)}%
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <p className="text-[10px] text-text-tertiary">Derived from EUR/USD, GBP/USD, GBP/JPY — covers EUR, USD, GBP, JPY only.</p>
-      </div>
-    </Panel>
   );
 }
 
@@ -1026,7 +984,6 @@ export default function MarketTerminal() {
             <p className="text-xs font-bold text-text-secondary uppercase tracking-widest border-b border-separator-border pb-2">Market Intel</p>
             <div className="space-y-6">
               <AccountRiskPanel />
-              <CurrencyStrengthMeter quotes={quotes} />
               <SituationalAwareness now={now} structure={structure} aiBias={aiBias} />
               <AlertsPanel alerts={alerts} enabled={alertsEnabled} onToggle={toggleAlerts} />
               <SquawkFeed squawks={squawks} loading={squawkLoading} onRefresh={generateSquawk} />

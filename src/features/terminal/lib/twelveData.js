@@ -41,14 +41,10 @@ export function acquireCredits(cost) {
 export const WATCHLIST = [
   { symbol: "QQQ",     biasKey: "NQ",      label: "NQ (via QQQ)", group: "index" },
   { symbol: "SPY",     biasKey: "ES",      label: "ES (via SPY)", group: "index" },
-  { symbol: "EUR/USD", biasKey: "EURUSD",  label: "EUR/USD",      group: "fx" },
-  { symbol: "GBP/USD", biasKey: "GBPUSD",  label: "GBP/USD",      group: "fx" },
-  { symbol: "GBP/JPY", biasKey: "GBPJPY",  label: "GBP/JPY",      group: "fx" },
 ];
 
 export function formatPrice(group, symbol, price) {
   if (price === null || price === undefined || Number.isNaN(price)) return "—";
-  if (group === "fx") return price.toFixed(symbol.includes("JPY") ? 3 : 5);
   if (group === "crypto") return price >= 100 ? price.toFixed(2) : price.toFixed(4);
   return price.toFixed(2);
 }
