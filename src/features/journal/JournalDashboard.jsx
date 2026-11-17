@@ -203,7 +203,7 @@ export default function JournalDashboard({ navigationRequest }) {
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
             <EquityPanel data={data} netPnl={netPnl} equityCurve={equityCurve} loading={loading} rangeLabel={rangeLabel} />
             <div className="flex flex-col gap-4 [&>*:last-child]:flex-1">
-              <PayoutTracker account={account} fnStatus={isFunded ? fnStatus : null} />
+              <PayoutTracker fnStatus={fnStatus} />
               {isFunded ? <RiskGauge status={fnStatus} loading={fnLoading} /> : <ProcessCard onReview={openPsychology} />}
             </div>
           </div>

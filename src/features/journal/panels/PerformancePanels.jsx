@@ -94,7 +94,8 @@ export function EquityPanel({ data, netPnl, equityCurve, loading, rangeLabel }) 
 }
 
 // ─── Payout tracker ────────────────────────────────────────────────────────
-// Counts P&L from its own start date, not from the dashboard's date filter.
+// Only counts trades labeled Funded, from its own start date, regardless of the
+// dashboard's account toggle or date filter.
 // A live, non-breached funded account uses the numbers from Account Status.
 function useTradesSince(account, start) {
   const [state, setState] = useState({ key: null, trades: [], error: null });
@@ -113,14 +114,16 @@ function useTradesSince(account, start) {
   return { trades, loading: Boolean(start) && state.key !== key, error: state.key === key ? state.error : null };
 }
 
-export function PayoutTracker({ account, fnStatus }) {
+const PAYOUT_ACCOUNT = "funded";
+
+export function PayoutTracker({ fnStatus }) {
   const [settings, setSettings] = useState(readPayoutSettings);
-  const mine = settings[account] || {};
+  const mine = settings[PAYOUT_ACCOUNT] || {};
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({ target: "", start: "" });
 
-  const live = account === "funded" && fnStatus && !isBreached(fnStatus) && Number(fnStatus.profitTarget) > 0;
-  const { trades, loading, error } = useTradesSince(account, live ? null : mine.start);
+  const live = fnStatus && !isBreached(fnStatus) && Number(fnStatus.profitTarget) > 0;
+  const { trades, loading, error } = useTradesSince(PAYOUT_ACCOUNT, live ? null : mine.start);
 
   const target = live ? Number(fnStatus.profitTarget) : Number(mine.target) || 0;
   const pnl = live ? Number(fnStatus.currentProfit) || 0 : trades.reduce((s, t) => s + (typeof t.pnl === "number" ? t.pnl : 0), 0);
@@ -132,7 +135,7 @@ export function PayoutTracker({ account, fnStatus }) {
   function save() {
     const n = parseFloat(draft.target);
     if (!Number.isNaN(n) && n > 0) {
-      const next = { ...settings, [account]: { target: n, start: draft.start || todayISO() } };
+      const next = { ...settings, [PAYOUT_ACCOUNT]: { target: n, start: draft.start || todayISO() } };
       setSettings(next);
       writePayoutSettings(next);
     }
