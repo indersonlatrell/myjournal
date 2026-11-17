@@ -13,6 +13,7 @@ import { EquityPanel, MonthlyPnl, PayoutTracker, ProcessCard, StreakStrip, Weekl
 import { ConfluencePanel, SetupsPanel, WinRateChart } from "@/src/features/journal/panels/SetupPanels";
 import { DayAnalysisPanel, GoalTracker, MistakesPanel, OneAndDoneTracker, RulesPanel, TradeQualityPanel } from "@/src/features/journal/panels/PsychologyPanels";
 import { JournalAI, MacroPanel, MacroWarningBanner, NextBestAction } from "@/src/features/journal/panels/InsightPanels";
+import { UpcomingEvents } from "@/src/features/journal/panels/UpcomingEvents";
 
 const SECTIONS_KEY = "myjournal_sections";
 
@@ -198,6 +199,8 @@ export default function JournalDashboard({ navigationRequest }) {
             <MacroPanel macro={macro} loading={macroLoading} error={macroError} onRefresh={loadMacro} fill />
           </div>
         </div>
+
+        <UpcomingEvents macro={macro} loading={macroLoading} error={macroError} />
 
         <Section id="performance" title="Performance" subtitle="Your results, at a glance" openSections={openSections} toggleSection={toggleSection}>
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
