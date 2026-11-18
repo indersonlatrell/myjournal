@@ -24,6 +24,7 @@ async function fearAndGreed() {
 // to cache successful responses too, and fall back to the stale copy if a refresh fails.
 const FEED_TTL_MS = 30 * 60 * 1000;
 const feedCache = new Map(); // feed URL -> { at, data }
+const feedStatus = new Map(); // feed URL -> last HTTP status or error, reported in the response
 
 async function loadFeed(feed) {
   const cached = feedCache.get(feed);
@@ -33,12 +34,14 @@ async function loadFeed(feed) {
       headers: { "User-Agent": "Mozilla/5.0" },
       cf: { cacheEverything: true, cacheTtlByStatus: { "200-299": FEED_TTL_MS / 1000, "400-599": 0 } },
     });
+    feedStatus.set(feed, res.status);
     if (!res.ok) return cached?.data ?? [];
     const data = await res.json();
     if (!Array.isArray(data)) return cached?.data ?? [];
     feedCache.set(feed, { at: Date.now(), data });
     return data;
-  } catch {
+  } catch (err) {
+    feedStatus.set(feed, err.message || "fetch failed");
     return cached?.data ?? []; // A failed feed shouldn't hide the other one.
   }
 }
@@ -122,6 +125,7 @@ export async function handleMacro() {
     fearGreed: fg,
     events,
     upcoming: upcomingEvents(calendar, now),
+    calendarStatus: FEEDS.map((f) => feedStatus.get(f) ?? "cached"),
     todayWarning: today.length ? `${today.map((e) => e.name).join(", ")}. Trade with caution or sit out.` : null,
   });
 }

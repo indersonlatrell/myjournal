@@ -145,7 +145,11 @@ export function UpcomingEvents({ macro, loading, error }) {
     <Panel icon={RiCalendarEventLine} title="Upcoming news" subtitle="USD high and medium-impact events for NQ and ES · times in ET"
       action={!loading && !error && <span className="text-body-2-regular text-text-tertiary">{upcomingCount} upcoming</span>}>
       {loading ? <SkeletonStack count={3} className="h-12" /> : error ? <EmptyState>{error}</EmptyState> : !events.length ? (
-        <EmptyState>No relevant USD events in the next 7 days.</EmptyState>
+        <EmptyState>
+          {macro?.calendarStatus?.[0] != null && macro.calendarStatus[0] !== 200 && macro.calendarStatus[0] !== "cached"
+            ? "The news calendar is unavailable right now. Try refreshing in a few minutes."
+            : "No relevant USD events in the next 7 days."}
+        </EmptyState>
       ) : (
         <Tabs defaultSelectedKey="all">
           <TabList aria-label="Filter events by impact">
