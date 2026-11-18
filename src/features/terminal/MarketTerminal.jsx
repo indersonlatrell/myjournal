@@ -1,11 +1,14 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { LineChart, Line, ResponsiveContainer } from "recharts";
+import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts";
 import {
   RefreshCw, CheckCircle2, XCircle, MinusCircle, Circle, Loader2,
   Radio, Clock, TrendingUp, TrendingDown, AlertTriangle, Sparkles, Landmark,
   Bell, BellOff, Search, X, ArrowUp, ArrowDown, Minus, StickyNote,
 } from "lucide-react";
-import { WATCHLIST, fetchQuotes, fetchQuote, fetchSeries, searchSymbols, acquireCredits, formatPrice } from "@/src/features/terminal/lib/twelveData";
+import { fetchQuote, searchSymbols, acquireCredits, formatPrice } from "@/src/features/terminal/lib/twelveData";
+import { WATCHLIST, fetchFutures } from "@/src/features/terminal/lib/futures";
+import { PositionSizer } from "@/src/features/terminal/PositionSizer";
+import { RiCalculatorLine } from "@remixicon/react";
 import { evaluateScenario, trendOf } from "@/src/features/terminal/lib/marketStructure";
 import { GRID_COLS, GRID_ROWS, WORLD_DOTS, SESSION_CITIES } from "@/src/features/terminal/lib/worldMap";
 import { useFnStatus } from "@/src/features/account/RiskGauge";
@@ -16,21 +19,10 @@ const AI_BIAS_KEY = "myjournal_terminal_ai_bias";
 const NOTES_KEY = "myjournal_terminal_notes";
 const ALERTS_ENABLED_KEY = "myjournal_terminal_alerts_enabled";
 
-// Conservative polling — Twelve Data free tier is 800 credits/day, 8/min.
-// Tuned so a full trading session (~8h, tab visible) stays well under budget:
-// quotes ~5cr/10min, 1H ~5cr/60min (matches candle close), 4H ~5cr/4h, D ~5cr/24h.
-// Requests are additionally paced through acquireCredits() (see lib/twelveData).
-const QUOTE_INTERVAL_MS = 10 * 60 * 1000;
-const SERIES_INTERVAL_MS = 60 * 60 * 1000;
-const SERIES_4H_INTERVAL_MS = 4 * 60 * 60 * 1000;
-const SERIES_DAILY_INTERVAL_MS = 24 * 60 * 60 * 1000;
+// NQ/ES quotes and candles come from the Worker's /futures route (cached 60s there),
+// so a 2-minute poll keeps prices fresh without hammering the upstream feed.
+const FUTURES_INTERVAL_MS = 2 * 60 * 1000;
 const SQUAWK_INTERVAL_MS = 5 * 60 * 1000;
-// A series fetch can miss its window (real per-minute contention on the
-// shared API key) and get silently caught — without a faster retry, that
-// symbol would be stuck showing "loading" for a full SERIES_INTERVAL_MS.
-// So: retry soon while any symbol is still missing data, then fall back to
-// the slow interval once every symbol has loaded at least once.
-const SERIES_RETRY_MS = 90 * 1000;
 // Macro/geopolitical backdrop doesn't move minute to minute, so the AI bias
 // call — and the Groq usage it costs — refreshes far less often than price.
 const AI_BIAS_INTERVAL_MS = 45 * 60 * 1000;
@@ -67,23 +59,6 @@ const SESSIONS = [
 function isSessionActive(session, utcHour) {
   if (session.start < session.end) return utcHour >= session.start && utcHour < session.end;
   return utcHour >= session.start || utcHour < session.end;
-}
-
-// Runs `loadFn` once immediately, then reschedules itself: quickly
-// (retryMs) while `isComplete()` is false — recovering fast from a missed
-// rate-limit window — otherwise at the slow, credit-friendly `intervalMs`
-// cadence once every symbol has loaded at least once. Returns a cleanup fn.
-function scheduleAdaptivePoll(loadFn, isComplete, intervalMs, retryMs) {
-  let cancelled = false;
-  let timer;
-  const tick = async (first) => {
-    if (cancelled) return;
-    if (first || document.visibilityState === "visible") await loadFn();
-    if (cancelled) return;
-    timer = setTimeout(() => tick(false), isComplete() ? intervalMs : retryMs);
-  };
-  tick(true);
-  return () => { cancelled = true; clearTimeout(timer); };
 }
 
 function parseJsonLoose(text) {
@@ -130,9 +105,9 @@ function buildBiasPrompt(macro) {
     ? [
         `Risk sentiment: ${macro.sentiment || "unknown"}`,
         macro.fearGreed ? `Fear & Greed Index: ${macro.fearGreed.score}/100 (${macro.fearGreed.rating})` : null,
-        macro.events?.length
-          ? `Upcoming high-impact events: ${macro.events.slice(0, 6).map((e) => `${e.name} (${e.currency}, ${e.isToday ? "today" : e.date})`).join("; ")}`
-          : "No high-impact events flagged in the next few days.",
+        usdEvents(macro).length
+          ? `Upcoming USD events: ${usdEvents(macro).slice(0, 6).map((e) => `${e.name} (${e.impact || "high"} impact, ${new Date(e.timestamp).toLocaleString("en-US", { weekday: "short", hour: "2-digit", minute: "2-digit", timeZone: "America/New_York" })} ET)`).join("; ")}`
+          : "No USD high- or medium-impact events flagged in the next few days.",
       ].filter(Boolean).join("\n")
     : "Macro feed unavailable right now — use your general knowledge of the current macro/rates/geopolitical backdrop.";
 
@@ -280,8 +255,29 @@ function LookupCard({ result, onDismiss }) {
 }
 
 // ─── Macro strip ────────────────────────────────────────────────────────
-function MacroStrip({ macro, generatedAt, loading, onRefresh }) {
-  const nextEvent = macro?.events?.[0];
+// USD events only: those are what move NQ/ES. Older Worker responses only carry `events`.
+function usdEvents(macro) {
+  const list = Array.isArray(macro?.upcoming) ? macro.upcoming : macro?.events || [];
+  return list.filter((e) => e.currency === "USD");
+}
+
+// The Worker reports the calendar feed's last HTTP status; the first entry is this week's feed.
+function calendarDown(macro) {
+  const status = macro?.calendarStatus?.[0];
+  return status != null && status !== 200 && status !== "cached" && !usdEvents(macro).length;
+}
+
+function untilLabel(ms) {
+  const mins = Math.max(0, Math.round(ms / 60000));
+  if (mins < 60) return `in ${mins}m`;
+  if (mins < 24 * 60) return `in ${Math.floor(mins / 60)}h ${mins % 60}m`;
+  return new Date(Date.now() + ms).toLocaleDateString("en-GB", { weekday: "short", timeZone: "America/New_York" });
+}
+
+function MacroStrip({ macro, generatedAt, loading, onRefresh, now }) {
+  const nowMs = now.getTime();
+  const nextEvent = usdEvents(macro).find((e) => e.timestamp >= nowMs);
+  const soon = nextEvent && nextEvent.timestamp - nowMs <= 30 * 60 * 1000;
   return (
     <Panel
       icon={Landmark}
@@ -300,9 +296,13 @@ function MacroStrip({ macro, generatedAt, loading, onRefresh }) {
             {macro.fearGreed && (
               <span className="text-text-tertiary">F&amp;G {macro.fearGreed.score} · {macro.fearGreed.rating}</span>
             )}
-            {nextEvent && (
+            {nextEvent ? (
+              <span className={soon ? "font-bold text-text-error-primary" : "text-text-tertiary"}>
+                Next USD: {nextEvent.name}{nextEvent.impact === "medium" ? " (medium)" : ""} · {new Date(nextEvent.timestamp).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "America/New_York" })} ET · {untilLabel(nextEvent.timestamp - nowMs)}
+              </span>
+            ) : (
               <span className="text-text-tertiary">
-                Next: {nextEvent.name} ({nextEvent.currency}) {nextEvent.isToday ? "today" : nextEvent.date}
+                {calendarDown(macro) ? "News calendar unavailable right now" : "No USD high/medium events this week"}
               </span>
             )}
           </>
@@ -357,7 +357,7 @@ function ScenarioCard({ item, quote, candles, evalResult, biasEntry, biasLoading
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-bold text-text-primary">{item.label}</p>
-          <p className="text-[10px] uppercase tracking-widest text-text-tertiary">{item.group}</p>
+          <p className="text-[10px] uppercase tracking-widest text-text-tertiary">{item.name}</p>
         </div>
         <div className="text-right">
           <p className={`text-lg font-bold tabular-nums ${quote && !quote.error ? (up ? "text-status-lime-text" : "text-status-rose-text") : "text-text-tertiary"}`}>
@@ -377,6 +377,7 @@ function ScenarioCard({ item, quote, candles, evalResult, biasEntry, biasLoading
         <div className="h-10 -mx-1">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={sparkData}>
+              <YAxis hide domain={["dataMin", "dataMax"]} />
               <Line type="monotone" dataKey="close" stroke={sparkColor} strokeWidth={1.5} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
@@ -639,7 +640,13 @@ export default function MarketTerminal() {
   const [squawkLoading, setSquawkLoading] = useState(false);
   const [now, setNow] = useState(new Date());
   const [notes, setNotes] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(NOTES_KEY)) || {}; } catch { return {}; }
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(NOTES_KEY)) || {}; } catch { /* storage unavailable */ }
+    // Notes used to be keyed by QQQ/SPY; carry them over to the futures symbols.
+    for (const w of WATCHLIST) {
+      if (saved[w.symbol] == null && saved[w.legacySymbol] != null) saved[w.symbol] = saved[w.legacySymbol];
+    }
+    return saved;
   });
   const [alerts, setAlerts] = useState([]);
   const [alertsEnabled, setAlertsEnabled] = useState(() => localStorage.getItem(ALERTS_ENABLED_KEY) === "1");
@@ -661,90 +668,37 @@ export default function MarketTerminal() {
 
   const loadQuotes = useCallback(async () => {
     setLoadingQuotes(true);
-    try {
-      await acquireCredits(WATCHLIST.length);
-      const data = await fetchQuotes(WATCHLIST.map((w) => w.symbol));
-      setQuotes((prev) => ({ ...prev, ...data }));
-      setLastQuoteAt(new Date());
-      setQuoteError(null);
-    } catch (e) {
-      setQuoteError(e.message || "Failed to fetch quotes");
-    } finally {
-      setLoadingQuotes(false);
-    }
-  }, []);
-
-  const loadSeries = useCallback(async () => {
-    for (const w of WATCHLIST) {
-      try {
-        await acquireCredits(1);
-        const candles = await fetchSeries(w.symbol, "1h");
-        setSeries((prev) => ({ ...prev, [w.symbol]: candles }));
-      } catch {
-        // leave stale/absent data for this symbol, move on
+    const results = await Promise.allSettled(WATCHLIST.map((w) => fetchFutures(w.symbol)));
+    const nextQuotes = {}, h1 = {}, h4 = {}, daily = {};
+    let failure = null;
+    results.forEach((r, i) => {
+      const sym = WATCHLIST[i].symbol;
+      if (r.status === "fulfilled") {
+        nextQuotes[sym] = r.value.quote;
+        h1[sym] = r.value.h1;
+        h4[sym] = r.value.h4;
+        daily[sym] = r.value.daily;
+      } else {
+        failure = r.reason?.message || "Failed to fetch futures";
       }
-    }
-  }, []);
-
-  const loadSeries4h = useCallback(async () => {
-    for (const w of WATCHLIST) {
-      try {
-        await acquireCredits(1);
-        const candles = await fetchSeries(w.symbol, "4h");
-        setSeries4h((prev) => ({ ...prev, [w.symbol]: candles }));
-      } catch {
-        // leave stale/absent data for this symbol, move on
-      }
-    }
-  }, []);
-
-  const loadSeriesDaily = useCallback(async () => {
-    for (const w of WATCHLIST) {
-      try {
-        await acquireCredits(1);
-        const candles = await fetchSeries(w.symbol, "1day");
-        setSeriesDaily((prev) => ({ ...prev, [w.symbol]: candles }));
-      } catch {
-        // leave stale/absent data for this symbol, move on
-      }
-    }
+    });
+    // Keep the last good data for a contract whose refresh failed.
+    setQuotes((prev) => ({ ...prev, ...nextQuotes }));
+    setSeries((prev) => ({ ...prev, ...h1 }));
+    setSeries4h((prev) => ({ ...prev, ...h4 }));
+    setSeriesDaily((prev) => ({ ...prev, ...daily }));
+    if (Object.keys(nextQuotes).length) setLastQuoteAt(new Date());
+    setQuoteError(failure);
+    setLoadingQuotes(false);
   }, []);
 
   useEffect(() => {
     loadQuotes();
     const id = setInterval(() => {
       if (document.visibilityState === "visible") loadQuotes();
-    }, QUOTE_INTERVAL_MS);
+    }, FUTURES_INTERVAL_MS);
     return () => clearInterval(id);
   }, [loadQuotes]);
-
-  const seriesRef = useRef(series);
-  const series4hRef = useRef(series4h);
-  const seriesDailyRef = useRef(seriesDaily);
-  useEffect(() => { seriesRef.current = series; }, [series]);
-  useEffect(() => { series4hRef.current = series4h; }, [series4h]);
-  useEffect(() => { seriesDailyRef.current = seriesDaily; }, [seriesDaily]);
-
-  useEffect(() => scheduleAdaptivePoll(
-    loadSeries,
-    () => WATCHLIST.every((w) => seriesRef.current[w.symbol]),
-    SERIES_INTERVAL_MS,
-    SERIES_RETRY_MS,
-  ), [loadSeries]);
-
-  useEffect(() => scheduleAdaptivePoll(
-    loadSeries4h,
-    () => WATCHLIST.every((w) => series4hRef.current[w.symbol]),
-    SERIES_4H_INTERVAL_MS,
-    SERIES_RETRY_MS,
-  ), [loadSeries4h]);
-
-  useEffect(() => scheduleAdaptivePoll(
-    loadSeriesDaily,
-    () => WATCHLIST.every((w) => seriesDailyRef.current[w.symbol]),
-    SERIES_DAILY_INTERVAL_MS,
-    SERIES_RETRY_MS,
-  ), [loadSeriesDaily]);
 
   // AI-determined bias — sourced from macro sentiment/events, not price, so
   // it can be checked independently against 1H structure. Cached so a page
@@ -946,7 +900,7 @@ export default function MarketTerminal() {
               loading={lookupLoading}
             />
             <button
-              onClick={() => { loadQuotes(); loadSeries(); }}
+              onClick={loadQuotes}
               className="flex items-center gap-2 text-[11px] px-3 py-2 rounded border border-separator-border text-text-secondary hover:text-text-primary hover:border-white/20 transition-colors"
             >
               <RefreshCw size={12} className={loadingQuotes ? "animate-spin" : ""} /> Refresh
@@ -956,7 +910,7 @@ export default function MarketTerminal() {
 
         {lookupResult && <LookupCard result={lookupResult} onDismiss={() => setLookupResult(null)} />}
 
-        <MacroStrip macro={aiBias?.macro} generatedAt={aiBias?.generatedAt} loading={biasLoading} onRefresh={refreshBias} />
+        <MacroStrip macro={aiBias?.macro} generatedAt={aiBias?.generatedAt} loading={biasLoading} onRefresh={refreshBias} now={now} />
 
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6 items-start">
           <div className="space-y-3">
@@ -978,6 +932,9 @@ export default function MarketTerminal() {
                 />
               ))}
             </div>
+            <Panel icon={RiCalculatorLine} iconColor="text-foreground-icon-secondary" title="Position size">
+              <PositionSizer quotes={quotes} />
+            </Panel>
           </div>
 
           <div className="space-y-3">

@@ -1,11 +1,11 @@
-// GET /futures?symbol=NQ=F&interval=5m|1d&range=5d|3mo
-// Proxies Yahoo's CME futures candles for the Day Context card (Yahoo blocks
+// GET /futures?symbol=NQ=F&interval=5m|1h|1d&range=5d|1mo|3mo|6mo
+// Proxies Yahoo's CME futures candles for Day Context and the terminal (Yahoo blocks
 // browser CORS). Only a small whitelist is allowed and responses are cached 60s.
 import { CORS, json } from "../lib/http.js";
 
 const SYMBOLS = new Set(["NQ=F", "ES=F"]);
-const INTERVALS = new Set(["5m", "1d"]);
-const RANGES = new Set(["5d", "3mo"]);
+const INTERVALS = new Set(["5m", "1h", "1d"]);
+const RANGES = new Set(["5d", "1mo", "3mo", "6mo"]);
 const CACHE_SECONDS = 60;
 
 export async function handleFutures(url, ctx) {

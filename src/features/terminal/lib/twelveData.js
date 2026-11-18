@@ -34,15 +34,6 @@ export function acquireCredits(cost) {
   });
 }
 
-// `biasKey` maps each entry to its slot in the AI bias JSON (see
-// buildBiasPrompt in MarketTerminal.jsx). NQ/ES are priced via ETF proxies —
-// Twelve Data's free tier doesn't carry CME futures or raw index data, so QQQ
-// and SPY stand in (price levels won't match the real futures contracts).
-export const WATCHLIST = [
-  { symbol: "QQQ",     biasKey: "NQ",      label: "NQ (via QQQ)", group: "index" },
-  { symbol: "SPY",     biasKey: "ES",      label: "ES (via SPY)", group: "index" },
-];
-
 export function formatPrice(group, symbol, price) {
   if (price === null || price === undefined || Number.isNaN(price)) return "—";
   if (group === "crypto") return price >= 100 ? price.toFixed(2) : price.toFixed(4);
