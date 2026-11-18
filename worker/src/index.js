@@ -2,7 +2,7 @@
 import { json, preflight } from "./lib/http.js";
 import { handleChat } from "./routes/chat.js";
 import { handleFutures } from "./routes/futures.js";
-import { handleMacro } from "./routes/macro.js";
+import { handleMacro, refreshCalendar } from "./routes/macro.js";
 import { handleStatus } from "./routes/status.js";
 import { handleTrades } from "./routes/trades.js";
 
@@ -16,7 +16,7 @@ export default {
     try {
       switch (path) {
         case "/status": return await handleStatus(env);
-        case "/macro": return await handleMacro();
+        case "/macro": return await handleMacro(env);
         case "/chat": return await handleChat(request, env);
         case "/futures": return await handleFutures(url, ctx);
         case "/": return await handleTrades(url, env);
@@ -26,5 +26,10 @@ export default {
       console.error("unhandled", path, err.message);
       return json({ success: false, message: err.message }, 500);
     }
+  },
+
+  // Cron trigger (wrangler.toml): keeps the economic calendar stored in KV.
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(refreshCalendar(env));
   },
 };

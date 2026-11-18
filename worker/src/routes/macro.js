@@ -19,35 +19,72 @@ async function fearAndGreed() {
   }
 }
 
-// The calendar feed rate-limits (HTTP 429) when hit on every page load, and it only changes
-// about hourly. Keep each feed's last good copy in memory for 30 minutes, ask Cloudflare's edge
-// to cache successful responses too, and fall back to the stale copy if a refresh fails.
-const FEED_TTL_MS = 30 * 60 * 1000;
-const feedCache = new Map(); // feed URL -> { at, data }
+// The calendar feed rate-limits (HTTP 429), and it often blocks Cloudflare's shared outbound IPs
+// even when this Worker barely calls it. So a cron trigger (see wrangler.toml) fetches it every
+// 30 minutes and stores the last good copy in KV (binding CALENDAR); visitors only read from KV.
+// A request still tries the feed itself when KV has no copy yet or the copy is over 2 hours old,
+// at most once per 5 minutes per Worker instance.
+const STALE_MS = 2 * 60 * 60 * 1000;
+const RETRY_MS = 5 * 60 * 1000;
+const memory = new Map(); // feed URL -> { at, data }, saves a KV read per request
+const lastAttempt = new Map(); // feed URL -> time of the last live fetch from a request
 const feedStatus = new Map(); // feed URL -> last HTTP status or error, reported in the response
 
-async function loadFeed(feed) {
-  const cached = feedCache.get(feed);
-  if (cached && Date.now() - cached.at < FEED_TTL_MS) return cached.data;
+const kvKey = (feed) => `feed:${feed.split("/").pop()}`;
+
+async function fetchFeed(feed) {
   try {
-    const res = await fetch(feed, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-      cf: { cacheEverything: true, cacheTtlByStatus: { "200-299": FEED_TTL_MS / 1000, "400-599": 0 } },
-    });
+    const res = await fetch(feed, { headers: { "User-Agent": "Mozilla/5.0" } });
     feedStatus.set(feed, res.status);
-    if (!res.ok) return cached?.data ?? [];
+    if (!res.ok) return null;
     const data = await res.json();
-    if (!Array.isArray(data)) return cached?.data ?? [];
-    feedCache.set(feed, { at: Date.now(), data });
-    return data;
+    return Array.isArray(data) ? data : null;
   } catch (err) {
     feedStatus.set(feed, err.message || "fetch failed");
-    return cached?.data ?? []; // A failed feed shouldn't hide the other one.
+    return null;
   }
 }
 
-async function loadCalendar() {
-  return (await Promise.all(FEEDS.map(loadFeed))).flat();
+async function store(env, feed, data) {
+  const entry = { at: Date.now(), data };
+  memory.set(feed, entry);
+  if (env?.CALENDAR) await env.CALENDAR.put(kvKey(feed), JSON.stringify(entry));
+  return entry;
+}
+
+async function readStored(env, feed) {
+  const mem = memory.get(feed);
+  if (mem && Date.now() - mem.at < RETRY_MS) return mem;
+  const raw = env?.CALENDAR ? await env.CALENDAR.get(kvKey(feed)) : null;
+  const entry = raw ? JSON.parse(raw) : mem ?? null;
+  if (entry) memory.set(feed, entry);
+  return entry;
+}
+
+async function loadFeed(env, feed) {
+  const stored = await readStored(env, feed);
+  const stale = !stored || Date.now() - stored.at > STALE_MS;
+  if (stale && Date.now() - (lastAttempt.get(feed) ?? 0) > RETRY_MS) {
+    lastAttempt.set(feed, Date.now());
+    const fresh = await fetchFeed(feed);
+    if (fresh) return fresh.length || !stored ? (await store(env, feed, fresh)).data : stored.data;
+  } else if (stored) {
+    feedStatus.set(feed, "cached");
+  }
+  return stored?.data ?? []; // A failed feed shouldn't hide the other one.
+}
+
+async function loadCalendar(env) {
+  return (await Promise.all(FEEDS.map((feed) => loadFeed(env, feed)))).flat();
+}
+
+// Cron trigger: refresh every feed that answers, keep the stored copy for any that doesn't.
+export async function refreshCalendar(env) {
+  for (const feed of FEEDS) {
+    const data = await fetchFeed(feed);
+    if (data) await store(env, feed, data);
+    console.log("calendar refresh", kvKey(feed), feedStatus.get(feed), data ? data.length : "kept stored copy");
+  }
 }
 
 function highImpactEvents(calendar, now) {
@@ -113,9 +150,9 @@ function upcomingEvents(calendar, now) {
   return dedupe(events);
 }
 
-export async function handleMacro() {
+export async function handleMacro(env) {
   const now = new Date();
-  const [fg, calendar] = await Promise.all([fearAndGreed(), loadCalendar()]);
+  const [fg, calendar] = await Promise.all([fearAndGreed(), loadCalendar(env)]);
   const events = highImpactEvents(calendar, now);
   const sentiment = !fg ? "neutral" : fg.score >= 60 ? "risk-on" : fg.score <= 40 ? "risk-off" : "neutral";
   const today = events.filter((e) => e.isToday);

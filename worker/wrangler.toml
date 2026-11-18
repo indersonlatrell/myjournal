@@ -3,6 +3,7 @@
 # Deploy from this folder: npx wrangler deploy
 # Secrets live in Cloudflare (GROQ_API_KEY, NOTION_API_KEY, NOTION_DATABASE_ID)
 # and are kept across deploys.
+# KV namespace CALENDAR holds the economic calendar; the cron below refreshes it.
 name = "noisy-rain-e6aftest"
 main = "src/index.js"
 compatibility_date = "2026-05-27"
@@ -15,3 +16,11 @@ head_sampling_rate = 1
 [observability.logs]
 enabled = true
 invocation_logs = true
+
+# Economic calendar for /macro, refreshed by the cron trigger below.
+[[kv_namespaces]]
+binding = "CALENDAR"
+id = "f977bd4f83b2437883e190f4120023a1"
+
+[triggers]
+crons = ["*/30 * * * *"]
