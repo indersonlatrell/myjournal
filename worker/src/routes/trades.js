@@ -1,6 +1,7 @@
 // GET /?range=7d|30d|90d|ytd|all&account=funded|other|all
 // Reads the trade journal from Notion and returns trades plus summary stats.
 import { json } from "../lib/http.js";
+import { ANALYSE_FROM, readAnalyses } from "./chartAnalysis.js";
 import { checkbox, date, multiSelect, number, queryDatabase, select, text } from "../lib/notion.js";
 
 const RANGE_DAYS = { "7d": 7, "30d": 30, "90d": 90 };
@@ -106,8 +107,9 @@ export async function handleTrades(url, env) {
 
   const now = new Date();
   const start = rangeStart(range, now);
+  const analyses = await readAnalyses(env);
   const trades = pages
-    .map(toTrade)
+    .map((page) => ({ ...toTrade(page), chart: analyses[page.id]?.annotations?.length && (date(page.properties["Date & Time"]) || "") >= ANALYSE_FROM ? analyses[page.id] : null }))
     .filter((t) => t.date && matchesAccount(t, account))
     .filter((t) => {
       const d = new Date(t.date);

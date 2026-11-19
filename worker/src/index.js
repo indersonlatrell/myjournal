@@ -1,5 +1,6 @@
 // myjournal Worker: routes requests to one handler per feature.
 import { json, preflight } from "./lib/http.js";
+import { handleAnalyze } from "./routes/chartAnalysis.js";
 import { handleChat } from "./routes/chat.js";
 import { handleFutures } from "./routes/futures.js";
 import { handleMacro, refreshCalendar } from "./routes/macro.js";
@@ -18,6 +19,9 @@ export default {
         case "/status": return await handleStatus(env);
         case "/macro": return await handleMacro(env);
         case "/chat": return await handleChat(request, env);
+        case "/analyze":
+        case "/analyze/pending":
+        case "/analyze/result": return await handleAnalyze(request, env, path);
         case "/futures": return await handleFutures(url, ctx);
         case "/": return await handleTrades(url, env);
         default: return json({ success: false, message: "Not found" }, 404);

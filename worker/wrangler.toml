@@ -1,7 +1,8 @@
 # Cloudflare Worker that serves myjournal: trades from Notion, macro calendar,
-# Groq chat, funded-account status and CME futures candles.
+# Groq chat, funded-account status, CME futures candles and chart-analysis storage.
 # Deploy from this folder: npx wrangler deploy
-# Secrets live in Cloudflare (GROQ_API_KEY, NOTION_API_KEY, NOTION_DATABASE_ID)
+# Secrets live in Cloudflare (GROQ_API_KEY, NOTION_API_KEY, NOTION_DATABASE_ID,
+# ANALYZE_TOKEN for the chart-analysis script in scripts/analyze-charts.mjs)
 # and are kept across deploys.
 # KV namespace CALENDAR holds the economic calendar; the cron below refreshes it.
 name = "noisy-rain-e6aftest"
@@ -20,6 +21,12 @@ invocation_logs = true
 # Economic calendar for /macro, refreshed by the cron trigger below.
 [[kv_namespaces]]
 binding = "CALENDAR"
+id = "f977bd4f83b2437883e190f4120023a1"
+
+# Chart screenshot analyses (key "chart-analysis"). Same namespace as the calendar;
+# the keys don't overlap.
+[[kv_namespaces]]
+binding = "ANALYSIS"
 id = "f977bd4f83b2437883e190f4120023a1"
 
 [triggers]

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Runs scripts/analyze-charts.mjs every 30 minutes while the Mac is on, so new trade
+  screenshots are analysed without running anything by hand. Needs FreeLLMAPI running.
+  Install:   cp scripts/com.latrell.myjournal-analyze-charts.plist ~/Library/LaunchAgents/
+             launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.latrell.myjournal-analyze-charts.plist
+  Remove:    launchctl bootout gui/$(id -u)/com.latrell.myjournal-analyze-charts
+  Log:       ~/Library/Logs/myjournal-analyze-charts.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.latrell.myjournal-analyze-charts</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/Users/latrell/Desktop/myjournal/scripts/analyze-charts.mjs</string>
+    <string>--all</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/latrell/Desktop/myjournal</string>
+  <key>StartInterval</key>
+  <integer>1800</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/latrell/Library/Logs/myjournal-analyze-charts.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/latrell/Library/Logs/myjournal-analyze-charts.log</string>
+</dict>
+</plist>

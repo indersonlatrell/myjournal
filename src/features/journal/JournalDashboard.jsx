@@ -10,6 +10,7 @@ import { WORKER_URL } from "@/src/config";
 import { signedR, signedUSD } from "@/src/features/journal/format";
 import { buildEquityCurve, calcStreak, fetchMacroIntel, fetchTrades } from "@/src/features/journal/stats";
 import { EquityPanel, MonthlyPnl, PayoutTracker, ProcessCard, StreakStrip, WeeklySummary } from "@/src/features/journal/panels/PerformancePanels";
+import { ChartAnnotationsPanel } from "@/src/features/journal/panels/ChartAnnotationsPanel";
 import { ConfluencePanel, SetupsPanel, WinRateChart } from "@/src/features/journal/panels/SetupPanels";
 import { DayAnalysisPanel, GoalTracker, MistakesPanel, OneAndDoneTracker, RulesPanel, TradeQualityPanel } from "@/src/features/journal/panels/PsychologyPanels";
 import { JournalAI, MacroPanel, MacroWarningBanner, NextBestAction } from "@/src/features/journal/panels/InsightPanels";
@@ -221,6 +222,7 @@ export default function JournalDashboard({ navigationRequest }) {
             <WinRateChart data={data} loading={loading} />
           </div>
           <ConfluencePanel trades={data?.trades} loading={loading} />
+          <ChartAnnotationsPanel trades={data?.trades} loading={loading} />
         </Section>
 
         <Section id="psychology" title="Psychology" subtitle="Trade quality, day analysis, mistakes, rules, goals" openSections={openSections} toggleSection={toggleSection}>

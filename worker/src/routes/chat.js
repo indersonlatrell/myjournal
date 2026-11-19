@@ -34,8 +34,10 @@ function systemPrompt(trades, stats) {
   const compact = (trades || []).slice(0, 80).map((t) => ({
     date: t.date, pair: t.pair, setup: t.setup, win: t.win, r: t.r, pnl: t.pnl, session: t.session,
     day: t.day, quality: t.tradeQuality, confluences: t.confluences, mistakes: t.mistakes,
+    // The trader's own text annotations on the chart screenshots, when transcribed.
+    annotations: t.chart?.annotations,
   }));
-  return `You are a trading analyst assistant for a funded futures trader named Latrell. Answer questions about his trading data concisely and directly. Use specific numbers. Keep answers under 4 sentences. Only analyse the actual data, no generic advice.
+  return `You are a trading analyst assistant for a funded futures trader named Latrell. Answer questions about his trading data concisely and directly. Use specific numbers. Keep answers under 4 sentences. Only analyse the actual data, no generic advice. The "annotations" field holds the trader's own text labels from the chart screenshots (e.g. "SMT with PDL", "M15 FVG"); use them to link setups to results.
 
 Stats: ${stats?.count || 0} trades, ${stats?.winRate || 0}% win rate, ${stats?.totalR || 0}R total, net P&L $${stats?.netProfit || 0}.
 
